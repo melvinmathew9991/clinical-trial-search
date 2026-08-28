@@ -1034,3 +1034,51 @@ every field is a bug waiting for the next field.*
 **How I found it:** by accident, checking whether `workers=1` was
 deterministic. The retrains left the index stale, `doctor --full` said
 everything was fine, and that claim was checkable — so I checked it.
+
+### Round 2 — the pool was re-judged, and two conclusions reversed
+
+Judged all **1,532** outstanding candidates. Eval set 986 → **1,691**
+judgements over the same 97 queries; mean relevant per query 10.2 → 17.4.
+
+**Calibrated first, because a model judging its own evaluation is the exact
+circularity this audit exists to document.** Blind, balanced 60-item sample
+against the existing human labels: **90.0% agreement, Cohen's κ = 0.800**,
+precision 96.2% / recall 83.3%. Human-vs-human in TREC-style judging is
+typically κ 0.5–0.7, so this is usable — as a second annotator, *not* as a
+clinician. The measured bias was strictness: every miss was a case where the
+human read the query as a topic area and I read it as a specification. I
+loosened the threshold before starting.
+
+*Caught my own transcription error during calibration:* the first score came
+out κ = 0.633 with eleven disagreements, five of which looked wrong on
+inspection — #43 was a thrombosis registry for "blood clots and anticoagulation",
+obviously relevant, and I had judged it so. Two blocks of answers were
+mis-keyed. Corrected: κ = 0.800, six genuine disagreements. **A disagreement
+that looks wrong usually is; check the harness before the judgement.**
+
+**Reversal 1 — BM25 vs TF-IDF flips completely.**
+
+| | biased pool | re-judged |
+|---|---|---|
+| TF-IDF | **0.615** | 0.459 |
+| BM25 | 0.403 | **0.471** |
+
+Nothing about either system changed. The 21-point deficit was *entirely*
+TF-IDF having helped build the pool. And the corrected gap is **+0.0116,
+p = 0.47 — not significant.** The truthful statement is that the two lexical
+baselines are equivalent on this corpus; neither the original claim nor its
+reversal survives.
+
+**Reversal 2 — nDCG says the union is a wider net, not a better ranker.**
+By nDCG@10, which is not ceiling-capped, BM25 **0.799** and TF-IDF **0.797**
+beat union-fasttext's **0.746**. The union wins Recall@10 (0.702 vs 0.471) only
+by returning 1.8x as many documents, and wins R-precision because that metric
+is evaluated at depth |relevant| ≈ 17, which happens to match its result size.
+
+**Worth remembering:** when three metrics disagree, that disagreement *is* the
+finding. Recall@10 alone made the union look dominant; nDCG alone would make it
+look worse than a 40-line baseline. Reporting one of them would have been
+defensible and wrong either way.
+
+Recall@10 ceiling is now **0.626** (was 0.879) — with 17.4 relevant documents
+per query, ten slots cannot hold them.

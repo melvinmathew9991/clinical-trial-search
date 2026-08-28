@@ -140,6 +140,76 @@ actively opposes it.
 BM25 is now a pooled contributor for round 2, which raised the candidate count
 from 1,073 to **1,532 across all 97 queries**.
 
+## 7. Round 2: the pool was re-judged, and two conclusions reversed
+
+All **1,532** candidates were judged and merged. The eval set grew from 986 to
+**1,691** judgements across the same 97 queries — mean relevant per query 10.2
+to **17.4**.
+
+### Provenance: these judgements are model-generated, and calibrated
+
+They were produced by an LLM, not a clinician, and that must travel with any
+number computed from them. Before judging, agreement was measured against the
+existing human labels on a blind, balanced 60-item sample:
+
+| | |
+|---|---|
+| Raw agreement | **90.0 %** |
+| **Cohen's κ** | **0.800** |
+| Precision / recall vs the human | 96.2 % / 83.3 % |
+
+For reference, human-vs-human agreement in TREC-style relevance judging is
+typically κ 0.5–0.7. The measured bias was **strictness**: all five misses were
+cases where the human treated the query as a topic area and the model treated
+it as a specification. The threshold was loosened accordingly before judging.
+
+*This is a defensible substitute for a second annotator, and not a substitute
+for a clinician.* Section 3's remaining recommendation — an independent
+inter-annotator check — still stands.
+
+### Result 1: BM25 vs TF-IDF reverses entirely
+
+| | Round 1 (biased pool) | Round 2 (re-judged) |
+|---|---|---|
+| TF-IDF | **0.615** | 0.459 |
+| BM25 | 0.403 | **0.471** |
+| Gap | TF-IDF +0.212 | BM25 +0.012 |
+
+Nothing about either system changed. The 21-point deficit was **entirely** the
+artefact of TF-IDF having helped build the pool while BM25 had not.
+
+And the honest reading of the corrected number: **+0.0116, 95% CI
+[−0.0195, +0.0435], p = 0.47 — not significant.** BM25 and TF-IDF are
+indistinguishable on this corpus. Neither the original claim nor its reversal
+survives; the truthful statement is that the two lexical baselines are
+equivalent here.
+
+### Result 2: nDCG says the union's advantage is mostly budget
+
+| Method | Recall@10 | **nDCG@10** | R-precision | docs |
+|---|---|---|---|---|
+| BM25 | 0.471 | **0.799** | 0.458 | 10.0 |
+| TF-IDF | 0.459 | **0.797** | 0.449 | 10.0 |
+| union-fasttext | **0.702** | 0.746 | **0.616** | 17.8 |
+| union-skipgram | 0.687 | 0.733 | 0.607 | 17.6 |
+| fasttext | 0.353 | 0.662 | 0.351 | 10.0 |
+| skipgram | 0.351 | 0.655 | 0.346 | 10.0 |
+
+**The metrics disagree, and each is measuring something real.** By nDCG@10 —
+the metric that is *not* capped by `|relevant| > k` — the plain lexical
+baselines **beat the union** (0.799 vs 0.746). The union wins Recall@10 only
+because it returns 1.8× as many documents, and wins R-precision because that
+metric is evaluated at depth `|relevant|` ≈ 17, which happens to match its
+result-set size.
+
+So the union is not a better ranker. It is a **wider net**, and whether that is
+worth it is the product question PRD §8.4 already framed — now with the
+ranking cost made explicit rather than hidden by a single metric.
+
+The Recall@10 ceiling is now **0.626** (was 0.879): with 17.4 relevant
+documents per query on average, ten slots cannot hold them. BM25 at 0.471 is
+**75 % of attainable**.
+
 ## What holds up
 
 Most of the methodology is better than typical, and the audit did not disturb it:
