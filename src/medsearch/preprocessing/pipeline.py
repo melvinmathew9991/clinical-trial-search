@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
+from typing import Final
 
 from medsearch.exceptions import ConfigurationError
 from medsearch.logging_conf import get_logger
@@ -22,6 +23,38 @@ from medsearch.preprocessing.normalizer import clean_text
 from medsearch.runtime import ensure_nltk_data
 
 logger = get_logger(__name__)
+
+
+#: Negation and quantity terms that NLTK classes as English stopwords but
+#: which invert clinical meaning. Without these, "no evidence of thrombosis"
+#: and "evidence of thrombosis" tokenise identically -- the retrieval system
+#: cannot tell a ruled-out finding from a confirmed one.
+#:
+#: The old behaviour was worse than uniformly wrong, it was *inconsistent*:
+#: "no" and "not" were dropped as stopwords while "without", "never", "none",
+#: "absent" and "negative" survived, so half the negation vocabulary was
+#: silently discarded and half was not. PRD F-12 anticipated this and the hook
+#: below was left unwired; the domain audit is what finally exercised it.
+#:
+#: Deliberately narrow. Every word here costs vocabulary and appears in almost
+#: every abstract, so this is not the place for general clinical terms.
+CLINICAL_KEEP_WORDS: Final[tuple[str, ...]] = (
+    "no",
+    "not",
+    "nor",
+    "none",
+    "cannot",
+    "against",
+    "before",
+    "after",
+    "during",
+    "below",
+    "above",
+    "under",
+    "over",
+    "off",
+    "out",
+)
 
 
 class TextPreprocessor:
@@ -34,7 +67,9 @@ class TextPreprocessor:
 
     Args:
         keep_words: Words to retain even if they are English stopwords.
-            Reserved for the negation allowlist (PRD F-12).
+            Defaults to :data:`CLINICAL_KEEP_WORDS`, the negation allowlist
+            required by PRD F-12. Pass an explicit empty tuple to restore the
+            plain-English behaviour.
         min_token_length: Tokens shorter than this are dropped. Single
             characters survive normalisation but carry no signal.
 
@@ -63,8 +98,8 @@ class TextPreprocessor:
         self._min_token_length = min_token_length
 
         stop = set(stopwords.words("english"))
-        if keep_words:
-            stop -= {w.lower() for w in keep_words}
+        retained = CLINICAL_KEEP_WORDS if keep_words is None else keep_words
+        stop -= {w.lower() for w in retained}
         # frozenset: O(1) membership, and immutable so it cannot be mutated
         # by a caller holding a reference to the preprocessor.
         self._stopwords: frozenset[str] = frozenset(stop)

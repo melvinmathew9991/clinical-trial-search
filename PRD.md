@@ -164,6 +164,14 @@ The legacy implementation violated every one of them, and the arithmetic is exac
 
 ## 8. Success metrics & evaluation
 
+> ⚠️ **The retrieval numbers below are under revision.** A pre-deployment
+> domain audit found that relevance was labelled over a pool built from the
+> systems being scored, so `Recall@10 0.955` measures pool membership rather
+> than retrieval quality. The relative finding (TF-IDF beats the embeddings)
+> holds; the absolute recall claim is withdrawn pending re-judgement of 1,073
+> candidates. See **[EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md)**.
+
+
 A held-out eval set of query → relevant-trial-id pairs lives at `tests/fixtures/eval_queries.json`.
 
 Measured over **97 labelled queries / 986 relevance judgements**. The union

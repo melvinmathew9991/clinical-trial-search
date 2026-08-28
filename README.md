@@ -101,6 +101,13 @@ they are also what an AI coding assistant should load first.
 | [Phases.md](./Phases.md) | Sprint plan and definitions of done |
 | [Memory.md](./Memory.md) | Running progress log — **read this first in a new session** |
 
+> ⚠️ **The retrieval numbers below are under revision.** A pre-deployment
+> domain audit found that relevance was labelled over a pool built from the
+> systems being scored, so `Recall@10 0.955` measures pool membership rather
+> than retrieval quality. The relative finding (TF-IDF beats the embeddings)
+> holds; the absolute recall claim is withdrawn pending re-judgement of 1,073
+> candidates. See **[EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md)**.
+
 ## Retrieval quality — the keyword baseline wins
 
 Measured over **97 labelled queries / 986 relevance judgements**:

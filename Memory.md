@@ -942,3 +942,57 @@ is what they cost. Code that has not run is not "done"; it is a hypothesis.
   identity role assignments in `deploy/README.md` section 3.
 - **No browser has ever driven the UI.** The app serves and the engine path is
   tested; the widget layer is not.
+
+### Domain audit — the evaluation could not measure what it claimed
+
+Audited the eval set itself rather than the systems scored against it. Two
+defects in the pipeline, and one in the measurement that subsumes both.
+
+**The measurement is pool-bound, and I proved it.** Relevance was labelled over
+a pool built from the three systems being scored, so a document no system
+retrieved could not be relevant *by construction*. With the original tokeniser,
+**986 of 986** relevant documents sat inside that pool — 100%, zero outside —
+and the shipped union's 0.955 sat right at the 94.3% its own two members
+contributed.
+
+Then the tokeniser fix changed what gets retrieved, and re-measuring gave the
+proof:
+
+| Configuration | pool membership | measured Recall@10 |
+|---|---|---|
+| old tokeniser | 94.3% | 0.955 |
+| new tokeniser | 85.3% | 0.862 |
+
+**Every method dropped, TF-IDF included (0.648 → 0.615)** — and the embedding
+changes cannot touch TF-IDF. Recall tracks pool membership, not quality. *The
+metric can only measure agreement with the pipeline that built it.* The
+`Recall@10 0.955` headline is withdrawn; PRD §8's DoD was declared met on it.
+
+**The tokeniser was destroying clinical identity.** `strip_digits` removed every
+digit, on the stated rationale that "the numbers carry no distributional signal
+for retrieval" — true of prose, false of biomedicine. `CD4` and `CD8` both
+became `cd`. `ACE2` became `ace`. **Every `NCT…` registry ID became `nct`.**
+6,077 such tokens in 4,000 abstracts. Vocabulary 24,897 → **31,189** after the
+fix.
+
+**Negation was half-handled.** `no`/`not` dropped as stopwords while
+`without`/`never`/`none`/`absent` survived, so "no evidence of thrombosis"
+tokenised identically to "evidence of thrombosis". PRD F-12 predicted this and
+`TextPreprocessor` had carried an unwired `keep_words` hook since Sprint 3.
+
+**Why neither was ever caught: the eval set is blind to both.** Of 97 queries,
+**0 contain a digit** and 1 contains a negation — which uses "without", the
+word that survived. Every query is a natural-language phrase, exactly the case
+the old tokeniser handled well.
+
+**Worth remembering:** a drop in a metric is not evidence of a regression until
+you know what the metric is bound to. My first instinct on seeing 0.955 → 0.862
+was that the fix had hurt retrieval. It hadn't — the labels had gone stale, and
+TF-IDF dropping was the tell, because nothing I changed could affect it. *Check
+whether the control moved.*
+
+**Also added:** nDCG@10, R-precision and the achievable-recall ceiling (0.879,
+because 44 of 97 queries hold more than 10 relevant documents, so Recall@10
+could never reach 1.0). `scripts/make_eval_round2.py` does incremental pooling
+and has emitted **1,073 unjudged candidates across 95 of 97 queries** — until
+those are judged every recall figure is a lower bound.
