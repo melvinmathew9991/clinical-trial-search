@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from medsearch._typing import FloatArray, IntArray
 from medsearch.data.schema import CorpusSchema
 from medsearch.embeddings.document import DocumentEmbedder
 from medsearch.logging_conf import get_logger
@@ -121,6 +122,24 @@ class SearchEngine:
         """Number of searchable documents."""
         return self._index.size
 
+    def preprocess(self, query: str) -> list[str]:
+        """Tokenize a query with the engine's preprocessor.
+
+        Exposed so a companion retriever (the TF-IDF baseline in
+        :mod:`medsearch.search.hybrid`) can guarantee identical preprocessing
+        rather than constructing its own.
+        """
+        return self._preprocessor.transform(query)
+
+    @property
+    def is_sampled(self) -> bool:
+        """True when the backing index covers only part of the corpus.
+
+        Surfaced so the UI can say so rather than presenting partial coverage
+        as complete.
+        """
+        return self._index.is_sampled
+
     def search(self, query: str, *, top_n: int = 10) -> SearchResponse:
         """Rank documents against ``query``.
 
@@ -148,6 +167,15 @@ class SearchEngine:
             )
 
         query_vector = self._embedder.embed(tokens)
+
+        # SIF requires the query to lose the same corpus direction the
+        # documents lost at index-build time. Omitting this silently compares
+        # vectors in different subspaces and quietly degrades every result.
+        if self._index.principal_component is not None:
+            from medsearch.embeddings.weighting import remove_component
+
+            query_vector = remove_component(query_vector, self._index.principal_component)
+
         norm = float(np.linalg.norm(query_vector))
         if norm == 0.0:
             return SearchResponse(
@@ -172,7 +200,7 @@ class SearchEngine:
         return SearchResponse(query=query, results=results)
 
     @staticmethod
-    def _top_indices(scores: np.ndarray, top_n: int) -> np.ndarray:
+    def _top_indices(scores: FloatArray, top_n: int) -> IntArray:
         """Indices of the ``top_n`` highest scores, best first.
 
         ``argpartition`` is O(n); a full ``argsort`` is O(n log n). Only the
@@ -182,11 +210,13 @@ class SearchEngine:
         if count <= 0:
             return np.empty(0, dtype=np.int64)
         if count == scores.shape[0]:
-            return np.argsort(scores)[::-1]
+            ordered: IntArray = np.argsort(scores)[::-1]
+            return ordered
         partitioned = np.argpartition(scores, -count)[-count:]
-        return partitioned[np.argsort(scores[partitioned])[::-1]]
+        selected: IntArray = partitioned[np.argsort(scores[partitioned])[::-1]]
+        return selected
 
-    def _build_results(self, positions: np.ndarray, scores: np.ndarray) -> list[SearchResult]:
+    def _build_results(self, positions: IntArray, scores: FloatArray) -> list[SearchResult]:
         """Map index positions back to corpus records."""
         results: list[SearchResult] = []
         for rank, position in enumerate(positions, start=1):

@@ -12,6 +12,7 @@ import time
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from medsearch._typing import WordVectors
 from medsearch.embeddings.base import ModelKind, ModelMetadata, TrainingParams
 from medsearch.exceptions import ModelError, ResourceError
 from medsearch.logging_conf import get_logger, stage
@@ -93,7 +94,7 @@ def train_model(
     corpus_fingerprint: str,
     document_count: int,
     sampled: bool = False,
-) -> tuple[object, ModelMetadata]:
+) -> tuple[WordVectors, ModelMetadata]:
     """Train one embedding model and return it with its provenance.
 
     Args:
@@ -136,13 +137,17 @@ def train_model(
 
     started = time.perf_counter()
     with stage(f"train_{kind}", logger):
+        # gensim 4.x names this parameter `sentences` on the constructor;
+        # `corpus_iterable` is the equivalent argument on .train()/.build_vocab()
+        # only. Either way it accepts any re-iterable of token lists, which is
+        # what TokenCache provides (ADR-005).
         if kind is ModelKind.SKIPGRAM:
-            model = Word2Vec(corpus_iterable=corpus, **kwargs)
+            model = Word2Vec(sentences=corpus, **kwargs)
         else:
-            model = FastText(corpus_iterable=corpus, **kwargs)
+            model = FastText(sentences=corpus, **kwargs)
     elapsed = time.perf_counter() - started
 
-    vectors = model.wv
+    vectors: WordVectors = model.wv
     if len(vectors) == 0:
         raise ModelError(
             f"Training {kind} produced an empty vocabulary.\n"

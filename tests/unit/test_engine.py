@@ -1,4 +1,8 @@
-"""Search layer behaviour: ranking correctness and graceful degradation."""
+"""SearchEngine: ranking correctness and graceful degradation.
+
+Index persistence lives in ``test_index.py``; this module is about what the
+engine does with a loaded index.
+"""
 
 from __future__ import annotations
 
@@ -11,22 +15,15 @@ from medsearch.search.engine import SearchEngine, SearchResponse
 from medsearch.search.index import DocumentIndex
 
 
-class StubPreprocessor:
-    """Whitespace tokenizer, so search tests do not require NLTK data."""
-
-    def transform(self, text: str) -> list[str]:
-        return [t for t in text.lower().split() if t]
-
-
 @pytest.fixture
-def engine(fake_vectors: object) -> SearchEngine:
+def engine(fake_vectors: object, stub_preprocessor: object) -> SearchEngine:
     """A four-document engine with known semantic structure."""
     embedder = DocumentEmbedder(fake_vectors)
     documents = [
-        ["lung", "failure", "respiratory"],   # 0 - respiratory cluster
-        ["breathing", "lung"],                 # 1 - respiratory cluster
-        ["vaccine", "antibody"],               # 2 - immunology cluster
-        ["kidney", "renal"],                   # 3 - renal cluster
+        ["lung", "failure", "respiratory"],  # 0 - respiratory cluster
+        ["breathing", "lung"],  # 1 - respiratory cluster
+        ["vaccine", "antibody"],  # 2 - immunology cluster
+        ["kidney", "renal"],  # 3 - renal cluster
     ]
     matrix = l2_normalize(embedder.embed_corpus(documents))
     index = DocumentIndex(
@@ -45,7 +42,7 @@ def engine(fake_vectors: object) -> SearchEngine:
             "publication_date": ["2021-01-01"] * 4,
         }
     )
-    return SearchEngine(index, embedder, StubPreprocessor(), corpus)
+    return SearchEngine(index, embedder, stub_preprocessor, corpus)
 
 
 class TestRanking:
@@ -141,30 +138,10 @@ class TestSearchResponse:
             assert truncated.endswith("...")
 
 
-class TestIndexContracts:
-    def test_mismatched_row_ids_length_is_rejected(self) -> None:
-        with pytest.raises(Exception, match="does not match"):
-            DocumentIndex(
-                vectors=np.eye(3, dtype=np.float32),
-                row_ids=np.arange(2),
-                model_fingerprint="f",
-                model_kind="skipgram",
-                field="abstract",
-                corpus_fingerprint="c",
-            )
-
-    def test_one_dimensional_vectors_are_rejected(self) -> None:
-        with pytest.raises(Exception, match="2-D"):
-            DocumentIndex(
-                vectors=np.zeros(3, dtype=np.float32),
-                row_ids=np.arange(3),
-                model_fingerprint="f",
-                model_kind="skipgram",
-                field="abstract",
-                corpus_fingerprint="c",
-            )
-
-    def test_engine_rejects_dimension_mismatch(self, fake_vectors: object) -> None:
+class TestEngineContracts:
+    def test_rejects_dimension_mismatch_with_the_model(
+        self, fake_vectors: object, stub_preprocessor: object
+    ) -> None:
         index = DocumentIndex(
             vectors=np.zeros((2, 99), dtype=np.float32),
             row_ids=np.arange(2),
@@ -174,4 +151,32 @@ class TestIndexContracts:
             corpus_fingerprint="c",
         )
         with pytest.raises(ValueError, match="does not match"):
-            SearchEngine(index, DocumentEmbedder(fake_vectors), StubPreprocessor(), pd.DataFrame())
+            SearchEngine(index, DocumentEmbedder(fake_vectors), stub_preprocessor, pd.DataFrame())
+
+    def test_size_reports_indexed_documents(self, engine: SearchEngine) -> None:
+        assert engine.size == 4
+
+    def test_is_sampled_is_false_for_a_full_index(self, engine: SearchEngine) -> None:
+        assert engine.is_sampled is False
+
+    def test_is_sampled_is_true_for_a_sampled_index(
+        self, fake_vectors: object, stub_preprocessor: object
+    ) -> None:
+        index = DocumentIndex(
+            vectors=np.eye(2, 4, dtype=np.float32),
+            row_ids=np.arange(2),
+            model_fingerprint="f",
+            model_kind="skipgram",
+            field="abstract",
+            corpus_fingerprint="abc-n2000",
+        )
+        corpus = pd.DataFrame(
+            {
+                "trial_id": ["A", "B"],
+                "title": ["t", "t"],
+                "abstract": ["a", "a"],
+                "publication_date": ["2021", "2021"],
+            }
+        )
+        engine = SearchEngine(index, DocumentEmbedder(fake_vectors), stub_preprocessor, corpus)
+        assert engine.is_sampled is True

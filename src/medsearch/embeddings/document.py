@@ -18,6 +18,8 @@ from collections.abc import Iterable, Sequence
 
 import numpy as np
 
+from medsearch._typing import FloatArray, WordVectors
+from medsearch.embeddings.weighting import SifWeights
 from medsearch.logging_conf import get_logger
 
 logger = get_logger(__name__)
@@ -34,24 +36,28 @@ class DocumentEmbedder:
 
     Args:
         vectors: A gensim ``KeyedVectors``.
+        weights: Optional SIF weights. When supplied, each word vector is
+            scaled by ``a / (a + p(w))`` before averaging, so a rare
+            discriminating term dominates a common one. When ``None`` this is
+            plain mean pooling -- the original behaviour, kept as the default
+            so existing artefacts stay reproducible.
 
     Attributes:
         dim: Embedding dimensionality.
         oov_documents: Count of all-out-of-vocabulary documents seen so far.
     """
 
-    def __init__(self, vectors: object) -> None:
+    def __init__(self, vectors: WordVectors, weights: SifWeights | None = None) -> None:
         self._vectors = vectors
-        self.dim: int = int(vectors.vector_size)  # type: ignore[attr-defined]
+        self._weights = weights
+        self.dim: int = int(vectors.vector_size)
 
         # Built ONCE. This is the fix for ADR-004.
         # FastText can synthesise a vector for an unseen word from its
         # character n-grams, so membership is looked up through the model's
         # own __contains__ when available rather than a fixed word list.
         self._has_ngrams = bool(getattr(vectors, "bucket", 0))
-        self._vocabulary: frozenset[str] = frozenset(
-            vectors.index_to_key  # type: ignore[attr-defined]
-        )
+        self._vocabulary: frozenset[str] = frozenset(vectors.index_to_key)
         self.oov_documents = 0
 
         logger.debug(
@@ -71,11 +77,11 @@ class DocumentEmbedder:
 
     def _can_infer(self, token: str) -> bool:
         try:
-            return bool(self._vectors.__contains__(token))  # type: ignore[attr-defined]
+            return token in self._vectors
         except (KeyError, AttributeError):  # pragma: no cover
             return False
 
-    def embed(self, tokens: Sequence[str]) -> np.ndarray:
+    def embed(self, tokens: Sequence[str]) -> FloatArray:
         """Embed one document.
 
         Args:
@@ -92,8 +98,24 @@ class DocumentEmbedder:
 
         # KeyedVectors.__getitem__ with a list returns a stacked (n, dim)
         # array in one call -- far cheaper than a Python accumulation loop.
-        matrix = np.asarray(self._vectors[known], dtype=np.float32)  # type: ignore[index]
-        return matrix.mean(axis=0, dtype=np.float32)
+        matrix = np.asarray(self._vectors[known], dtype=np.float32)
+
+        if self._weights is None:
+            mean_pooled: FloatArray = matrix.mean(axis=0, dtype=np.float32)
+            return mean_pooled
+
+        # SIF: weighted average. Normalising by the weight sum rather than the
+        # token count keeps documents comparable regardless of how many rare
+        # terms they happen to contain.
+        w = self._weights.weights_for(known)
+        total = float(w.sum())
+        if total == 0.0:  # pragma: no cover - weights are strictly positive
+            fallback: FloatArray = matrix.mean(axis=0, dtype=np.float32)
+            return fallback
+        weighted: FloatArray = ((w[:, None] * matrix).sum(axis=0) / total).astype(
+            np.float32, copy=False
+        )
+        return weighted
 
     def embed_corpus(
         self,
@@ -101,7 +123,7 @@ class DocumentEmbedder:
         *,
         chunk_size: int = 1_000,
         total: int | None = None,
-    ) -> np.ndarray:
+    ) -> FloatArray:
         """Embed a whole corpus, in chunks.
 
         Chunking bounds peak memory: instead of one giant Python list of
@@ -117,8 +139,8 @@ class DocumentEmbedder:
             Shape ``(n_documents, dim)`` ``float32``.
         """
         self.oov_documents = 0
-        blocks: list[np.ndarray] = []
-        buffer: list[np.ndarray] = []
+        blocks: list[FloatArray] = []
+        buffer: list[FloatArray] = []
         seen = 0
 
         for tokens in documents:
@@ -138,7 +160,7 @@ class DocumentEmbedder:
         if not blocks:
             return np.zeros((0, self.dim), dtype=np.float32)
 
-        matrix = np.vstack(blocks).astype(np.float32, copy=False)
+        matrix: FloatArray = np.vstack(blocks).astype(np.float32, copy=False)
 
         if self.oov_documents:
             logger.warning(
@@ -151,7 +173,7 @@ class DocumentEmbedder:
         return matrix
 
 
-def l2_normalize(matrix: np.ndarray) -> np.ndarray:
+def l2_normalize(matrix: FloatArray) -> FloatArray:
     """L2-normalise each row, leaving zero rows as zero.
 
     Pre-normalising the index is what reduces cosine similarity to a single
@@ -165,8 +187,9 @@ def l2_normalize(matrix: np.ndarray) -> np.ndarray:
     Returns:
         Shape ``(n, dim)`` ``float32``, each non-zero row of unit length.
     """
-    matrix = np.asarray(matrix, dtype=np.float32)
-    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    array = np.asarray(matrix, dtype=np.float32)
+    norms = np.linalg.norm(array, axis=1, keepdims=True)
     # Guard the divide: zero-norm rows stay zero instead of becoming NaN.
     np.maximum(norms, np.finfo(np.float32).tiny, out=norms)
-    return (matrix / norms).astype(np.float32, copy=False)
+    normalised: FloatArray = (array / norms).astype(np.float32, copy=False)
+    return normalised

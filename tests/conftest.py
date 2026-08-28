@@ -1,12 +1,17 @@
 """Shared fixtures.
 
-Tests never touch the network, the 29 MB corpus, or a trained model
-(Rules.md section 5). Everything here is small enough that the whole suite
-runs in seconds on the target laptop.
+Tests never touch the network, the 29 MB corpus, or a trained production
+model (Rules.md section 5). Everything here is small enough that the whole
+suite runs in seconds on the target laptop.
+
+The sample corpus is a committed file rather than an inline string so that
+``Architecture.md`` section 3 and the repository agree, and so the fixture can
+be inspected and edited like data rather than code.
 """
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -14,23 +19,24 @@ import pytest
 
 from medsearch.config import Settings
 
-# ---------------------------------------------------------------- corpus
+FIXTURES = Path(__file__).parent / "fixtures"
 
-RAW_CSV = """Date added,Trial ID,Title,Brief title,Abstract,Publication date,Phase
-2021-06-04,NCT001,Coronavirus anxiety and emotional eating,Short A,"Patients with severe acute respiratory distress syndrome required ventilation.",2021-06-01,Phase 2
-2021-06-05,NCT002,Lung failure in critical COVID-19 cases,Short B,"Acute lung injury and respiratory failure were observed in ventilated patients.",2021-06-02,Phase 3
-2021-06-06,NCT003,Vaccine immunogenicity trial,Short C,"The vaccine produced antibody seroconversion in healthy adult volunteers.",2021-06-03,Phase 1
-2021-06-07,NCT004,Kidney injury among hospitalised patients,Short D,"Renal impairment and kidney injury occurred in hospitalised coronavirus patients.",2021-06-04,Phase 2
-2021-06-08,NCT005,Breathing difficulty assessment,Short E,"Breathing difficulty and shortness of breath were assessed in outpatients.",2021-06-05,Phase 1
-"""
+#: The committed 20-row corpus. Documents cluster into six topics
+#: (respiratory, vaccine, renal, coagulation, inflammation, antiviral) so
+#: retrieval assertions can be meaningful rather than arbitrary.
+SAMPLE_CORPUS = FIXTURES / "sample_corpus.csv"
 
 
 @pytest.fixture
 def corpus_csv(tmp_path: Path) -> Path:
-    """A five-row corpus with the real column names."""
-    path = tmp_path / "dimension-covid.csv"
-    path.write_text(RAW_CSV, encoding="utf-8")
-    return path
+    """A copy of the sample corpus inside ``tmp_path``.
+
+    Copied rather than used in place so a test that mutates it cannot corrupt
+    the committed fixture.
+    """
+    destination = tmp_path / "dimension-covid.csv"
+    shutil.copy2(SAMPLE_CORPUS, destination)
+    return destination
 
 
 @pytest.fixture
@@ -45,18 +51,46 @@ def corpus_missing_abstract(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def settings(tmp_path: Path) -> Settings:
-    """Settings pointing entirely at ``tmp_path``."""
+def empty_corpus(tmp_path: Path) -> Path:
+    """A schema-valid corpus whose text columns are all empty."""
+    path = tmp_path / "empty.csv"
+    path.write_text(
+        "Date added,Trial ID,Title,Abstract,Publication date\n2021-06-04,NCT001,,,2021-06-01\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.fixture
+def settings(tmp_path: Path, corpus_csv: Path) -> Settings:
+    """Settings pointing entirely at ``tmp_path``.
+
+    Deliberately minimal hyperparameters: 16 dimensions (the floor ``Settings``
+    permits), one epoch, one worker, and a 1,000 bucket. Over 20 documents that
+    trains in well under a second, which is what keeps the integration test
+    inside the 30-second suite budget.
+
+    ``workers=1`` also makes training deterministic for the reproducibility
+    test -- with more threads, interleaving makes runs near-identical but not
+    bit-exact.
+    """
+    data_dir = tmp_path / "data"
+    (data_dir / "raw").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(corpus_csv, data_dir / "raw" / "dimension-covid.csv")
+
     return Settings(
-        data_dir=tmp_path / "data",
+        data_dir=data_dir,
         model_dir=tmp_path / "models",
         report_dir=tmp_path / "reports",
-        vector_size=8,
+        vector_size=16,
         window=2,
         min_count=1,
         epochs=1,
         workers=1,
+        seed=42,
         fasttext_bucket=1_000,
+        min_free_memory_gb=0.0,
+        warn_free_memory_gb=0.0,
     )
 
 
@@ -66,8 +100,9 @@ def settings(tmp_path: Path) -> Settings:
 class FakeKeyedVectors:
     """Minimal stand-in for gensim ``KeyedVectors``.
 
-    Lets the embedding and search layers be tested without gensim installed
-    and without a training run.
+    Satisfies :class:`medsearch._typing.WordVectors` structurally, so the
+    embedding and search layers can be tested without gensim and without a
+    training run.
     """
 
     def __init__(self, vocabulary: dict[str, np.ndarray], vector_size: int) -> None:
@@ -114,3 +149,26 @@ def fake_vectors() -> FakeKeyedVectors:
         "patient": unit(list(rng.random(4))),
     }
     return FakeKeyedVectors(vocabulary, vector_size=4)
+
+
+@pytest.fixture
+def fasttext_like_vectors(fake_vectors: FakeKeyedVectors) -> FakeKeyedVectors:
+    """Toy vectors that advertise character n-grams, like FastText.
+
+    Exercises the ``_has_ngrams`` branch of ``DocumentEmbedder``.
+    """
+    fake_vectors.bucket = 1_000
+    return fake_vectors
+
+
+class StubPreprocessor:
+    """Whitespace tokenizer, so search tests need no NLTK data."""
+
+    def transform(self, text: str) -> list[str]:
+        return [t for t in text.lower().split() if t]
+
+
+@pytest.fixture
+def stub_preprocessor() -> StubPreprocessor:
+    """A deterministic preprocessor with no external data dependency."""
+    return StubPreprocessor()

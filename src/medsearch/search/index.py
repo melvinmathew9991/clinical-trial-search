@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
+from medsearch._typing import FloatArray, IntArray
 from medsearch.exceptions import ArtefactMismatchError, IndexBuildError
 from medsearch.logging_conf import get_logger
 
@@ -24,6 +25,7 @@ logger = get_logger(__name__)
 _VECTORS_FILENAME = "vectors.npy"
 _ROW_IDS_FILENAME = "row_ids.npy"
 _MANIFEST_FILENAME = "manifest.json"
+_COMPONENT_FILENAME = "principal_component.npy"
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,14 +42,21 @@ class DocumentIndex:
         model_kind: ``"skipgram"`` or ``"fasttext"``.
         field: ``"abstract"`` or ``"title"``.
         corpus_fingerprint: Digest of the corpus the vectors describe.
+        pooling: ``"mean"`` or ``"sif"`` -- how document vectors were composed.
+        principal_component: For SIF, the corpus direction subtracted from every
+            document vector. **A query must have the same direction removed**,
+            or it is compared against documents in a different subspace, so it
+            is stored with the index rather than recomputed.
     """
 
-    vectors: np.ndarray
-    row_ids: np.ndarray
+    vectors: FloatArray
+    row_ids: IntArray
     model_fingerprint: str
     model_kind: str
     field: str
     corpus_fingerprint: str
+    pooling: str = "mean"
+    principal_component: FloatArray | None = None
 
     def __post_init__(self) -> None:
         if self.vectors.ndim != 2:
@@ -66,6 +75,25 @@ class DocumentIndex:
         return int(self.vectors.shape[0])
 
     @property
+    def sampled_limit(self) -> int | None:
+        """Row cap this index was built under, or ``None`` for the full corpus.
+
+        ``run_preprocessing`` suffixes the corpus fingerprint with ``-n<limit>``
+        for a sampled run, so the limit survives into the manifest. Recovering
+        it here lets a consumer load exactly the slice the index covers instead
+        of silently pairing 2,000 vectors with a 10,666-row corpus.
+        """
+        _, separator, suffix = self.corpus_fingerprint.rpartition("-n")
+        if not separator or not suffix.isdigit():
+            return None
+        return int(suffix)
+
+    @property
+    def is_sampled(self) -> bool:
+        """True when this index covers only part of the corpus."""
+        return self.sampled_limit is not None
+
+    @property
     def dim(self) -> int:
         """Embedding dimensionality."""
         return int(self.vectors.shape[1])
@@ -81,6 +109,9 @@ class DocumentIndex:
         np.save(directory / _VECTORS_FILENAME, self.vectors.astype(np.float32, copy=False))
         np.save(directory / _ROW_IDS_FILENAME, self.row_ids.astype(np.int64, copy=False))
 
+        if self.principal_component is not None:
+            np.save(directory / _COMPONENT_FILENAME, self.principal_component)
+
         manifest = {
             "model_fingerprint": self.model_fingerprint,
             "model_kind": self.model_kind,
@@ -90,6 +121,8 @@ class DocumentIndex:
             "dim": self.dim,
             "dtype": "float32",
             "normalized": True,
+            "pooling": self.pooling,
+            "common_component_removed": self.principal_component is not None,
         }
         (directory / _MANIFEST_FILENAME).write_text(
             json.dumps(manifest, indent=2), encoding="utf-8"
@@ -124,19 +157,22 @@ class DocumentIndex:
         """
         manifest_file = directory / _MANIFEST_FILENAME
         if not manifest_file.exists():
-            raise IndexBuildError(
-                f"No index at {directory}.\n"
-                f"  Fix: run `medsearch index build`."
-            )
+            raise IndexBuildError(f"No index at {directory}.\n  Fix: run `medsearch index build`.")
 
         manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
         actual = str(manifest["model_fingerprint"])
         if expected_fingerprint is not None and actual != expected_fingerprint:
             raise ArtefactMismatchError(expected=expected_fingerprint, actual=actual)
 
-        mode = "r" if mmap else None
-        vectors = np.load(directory / _VECTORS_FILENAME, mmap_mode=mode)
+        vectors = (
+            np.load(directory / _VECTORS_FILENAME, mmap_mode="r")
+            if mmap
+            else np.load(directory / _VECTORS_FILENAME)
+        )
         row_ids = np.load(directory / _ROW_IDS_FILENAME)
+
+        component_file = directory / _COMPONENT_FILENAME
+        component = np.load(component_file) if component_file.exists() else None
 
         return cls(
             vectors=vectors,
@@ -145,6 +181,9 @@ class DocumentIndex:
             model_kind=str(manifest["model_kind"]),
             field=str(manifest["field"]),
             corpus_fingerprint=str(manifest.get("corpus_fingerprint", "")),
+            # Default "mean" keeps indexes built before SIF loadable.
+            pooling=str(manifest.get("pooling", "mean")),
+            principal_component=component,
         )
 
     @classmethod
