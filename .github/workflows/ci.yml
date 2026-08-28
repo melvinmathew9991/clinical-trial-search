@@ -49,8 +49,8 @@ jobs:
       - name: Enforce layer contract (import-linter)
         run: lint-imports
 
-      - name: Test
-        run: pytest
+      - name: Test (full suite + coverage gate)
+        run: pytest -m "" --cov-fail-under=80
 
       - name: Upload coverage
         if: matrix.python-version == '3.11'

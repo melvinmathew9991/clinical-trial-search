@@ -46,20 +46,30 @@
 
 ## 2. Layered design
 
-Five layers, each depending **only downward**. A layer never imports from a layer above it.
+Every module depends **only downward**. A layer never imports from a layer above it.
 
-| Layer | Package | Responsibility | May import |
-|-------|---------|----------------|------------|
-| L0 Foundation | `config`, `logging_conf`, `runtime`, `exceptions` | Settings, structured logs, thread pinning, error types | stdlib only |
-| L1 Data | `medsearch.data` | Load, validate, hash, cache the corpus | L0 |
-| L2 Preprocessing | `medsearch.preprocessing` | Pure text transforms | L0 |
-| L3 Embeddings | `medsearch.embeddings` | Train models, build document vectors | L0, L1, L2 |
-| L4 Search | `medsearch.search` | Index persistence, ranking | L0, L1, L3 |
-| L5 Interface | `cli`, `app`, `pipelines` | Orchestration and presentation | all |
+Listed highest to lowest, matching the `import-linter` contract exactly:
 
-**Enforcement:** `import-linter` contract in `pyproject.toml`, checked in CI. A violation
-fails the build — this is the single rule that stops the codebase collapsing back into
-the legacy "everything imports everything" shape.
+| Layer | Modules | Responsibility |
+|-------|---------|----------------|
+| L7 Interface | `app` \| `cli` | Presentation and command surface |
+| L6 Orchestration | `pipelines` | Train, evaluate, verify artefact integrity |
+| L5 Search | `search` | Index persistence, ranking, TF-IDF baseline |
+| L4 Embeddings | `embeddings` | Train models, build document vectors |
+| L3 Domain | `preprocessing` \| `data` | Text transforms; load, validate, cache |
+| L2 Logging | `logging_conf` | Structured logs, stage timing + RSS |
+| L1 Runtime | `runtime` | Thread pinning, memory probes, preflight |
+| L0 Primitives | `exceptions` \| `config` \| `_typing` | Errors, settings, type aliases |
+
+Modules joined by `|` are **siblings in one layer and may not import each other**.
+That rule is why the foundation is four layers rather than one: `runtime` imports
+`exceptions`, and `logging_conf` imports `runtime`. Both are correct and intended,
+and a single flat foundation layer rejected both.
+
+**Enforcement:** two `import-linter` contracts in `pyproject.toml`, checked in CI
+and by a pre-commit hook. A violation fails the build — this is the single rule
+that stops the codebase collapsing back into the legacy "everything imports
+everything" shape.
 
 ## 3. Folder structure
 
@@ -91,6 +101,7 @@ medical-embeddings-search/
 │       ├── runtime.py          # thread pinning, RSS probe, doctor checks
 │       ├── logging_conf.py     # structured logging setup
 │       ├── exceptions.py       # MedSearchError hierarchy
+│       ├── _typing.py          # FloatArray/IntArray aliases, WordVectors Protocol
 │       ├── cli.py              # typer app — the only argparse surface
 │       │
 │       ├── data/
@@ -108,58 +119,63 @@ medical-embeddings-search/
 │       │   ├── base.py         # EmbeddingModel protocol, ModelMetadata
 │       │   ├── trainer.py      # train_skipgram(), train_fasttext()
 │       │   ├── registry.py     # save/load artefacts + metadata sidecar
-│       │   └── document.py     # DocumentEmbedder — mean pooling
+│       │   ├── document.py     # DocumentEmbedder — mean or SIF pooling
+│       │   └── weighting.py    # SIF weights, principal component (ADR-011)
 │       │
 │       ├── search/
 │       │   ├── __init__.py
 │       │   ├── index.py        # DocumentIndex — .npy persistence, mmap
-│       │   └── engine.py       # SearchEngine, SearchResult
+│       │   ├── engine.py       # SearchEngine, SearchResult
+│       │   └── baseline.py     # TF-IDF keyword baseline (scipy.sparse)
 │       │
 │       ├── pipelines/
 │       │   ├── __init__.py
 │       │   ├── train.py        # end-to-end training orchestration
-│       │   └── evaluate.py     # Recall@k, MRR, latency, peak RSS
+│       │   ├── evaluate.py     # Recall@k, MRR@k, latency, target check
+│       │   └── integrity.py    # fingerprint checks across model/index/corpus
 │       │
 │       └── app/
 │           ├── __init__.py
-│           ├── streamlit_app.py    # entrypoint
-│           └── components.py       # results table, sidebar, state banners
+│           ├── streamlit_app.py    # entrypoint: flow only
+│           └── components.py       # sidebar, results table, abstracts, banners
 │
 ├── tests/
-│   ├── conftest.py             # tiny in-memory corpus fixture — no disk, no network
+│   ├── conftest.py             # fixtures: corpus copies, toy vectors, stub preprocessor
 │   ├── fixtures/
-│   │   ├── sample_corpus.csv   # 20 rows, committed
-│   │   └── eval_queries.json   # labelled query → relevant ids
+│   │   ├── sample_corpus.csv   # 20 rows, committed, six topic clusters
+│   │   └── eval_queries.json   # NOT YET WRITTEN — Sprint 8, see note below
 │   ├── unit/
-│   │   ├── test_config.py
-│   │   ├── test_schema.py
-│   │   ├── test_loader.py
-│   │   ├── test_normalizer.py
-│   │   ├── test_document.py
-│   │   ├── test_index.py
-│   │   └── test_engine.py
+│   │   ├── test_config.py      test_schema.py     test_loader.py
+│   │   ├── test_normalizer.py  test_preprocessing.py
+│   │   ├── test_document.py    test_registry.py
+│   │   ├── test_index.py       test_engine.py
+│   │   ├── test_runtime.py     test_cli.py
+│   │   └── test_regressions.py # one test per defect the legacy code shipped
 │   └── integration/
-│       └── test_train_pipeline.py
+│       └── test_train_pipeline.py   # marked slow: trains real models
 │
 ├── deploy/
 │   ├── docker/
 │   │   ├── Dockerfile          # multi-stage, non-root, slim
-│   │   └── compose.yaml
+│   │   └── compose.yaml        # local run under a 2 GB limit
 │   ├── azure/
 │   │   ├── data-factory/
 │   │   │   ├── linked-services/   # managed-identity only, no sasUri literals
 │   │   │   ├── pipelines/
 │   │   │   └── triggers/
 │   │   ├── databricks/
-│   │   │   └── job-train.json     # runs medsearch.pipelines.train as a wheel task
+│   │   │   ├── run_training.py    # replaces the legacy missing `training_model`
+│   │   │   └── run_indexing.py    # separate task: reclaims training memory first
 │   │   └── app-service/
-│   └── README.md               # runbook: provision → deploy → rotate secrets
+│   │       └── site-config.json   # managed identity, B2 tier, no secrets
+│   └── README.md               # runbook: revoke → provision → deploy → verify
 │
 ├── notebooks/
-│   └── 01-exploration.ipynb    # EDA + PCA only; never imported by src/
+│   └── 01-exploration.ipynb    # migrated legacy notebook; never imported by src/
 │
 ├── scripts/
-│   └── migrate_legacy.py       # one-shot: legacy artefacts → new layout
+│   ├── migrate_legacy.py       # one-shot: legacy artefacts → new layout
+│   └── make_eval_candidates.py # pooled candidate sheet for human labelling
 │
 ├── data/                       # gitignored (.gitkeep only)
 │   ├── raw/                    # source CSV, immutable
@@ -172,6 +188,26 @@ medical-embeddings-search/
 │
 └── reports/                    # gitignored — evaluation.json, profiles
 ```
+
+### 3.1 The one file this tree names but does not contain
+
+`tests/fixtures/eval_queries.json` is the labelled evaluation set. Everything
+around it now exists — `pipelines/evaluate.py`, the TF-IDF baseline, and
+`scripts/make_eval_candidates.py`, which pools candidates from Skip-gram,
+FastText **and** TF-IDF so no single method's biases shape what a labeller
+sees. On the real corpus, **35% of pooled candidates were surfaced only by
+TF-IDF**; had candidates come from the embedding models alone, the baseline
+would have been scored on documents the labeller never saw.
+
+The eval set itself is not something to invent. Relevance judgements are
+what every retrieval metric is measured against; fabricating them, or deriving
+them from keyword overlap, would produce numbers that look authoritative and
+quietly favour the baseline the project is trying to beat. It needs a human who
+can read a clinical abstract and say whether it answers the query.
+
+`medsearch evaluate` is registered as a command so the CLI surface is stable,
+but it exits 2 with a pointer to Phases.md rather than printing metrics it
+cannot compute.
 
 ## 4. Naming conventions
 
@@ -304,6 +340,32 @@ and friends **before** numpy is imported.
 The legacy UI serialised every returned abstract into a Plotly JSON payload on each
 rerun. Native `st.dataframe` renders the same data without the round-trip.
 
+**ADR-010 — Refuse a stale index rather than serve it.**
+An index records the fingerprint of the corpus it was built from, but nothing
+compared that against the *live* corpus file until Sprint 11. Because row ids
+are positional, a stale index does not fail — it resolves to the wrong
+documents, pairing one trial's title with another trial's score. That is worse
+than an outright error, because nothing looks broken. `load_search_engine` now
+raises `StaleIndexError`, and `medsearch doctor --full` reports it alongside
+the other two mismatch classes. *Consequence:* replacing the corpus without
+retraining is a loud failure. This matters most in the Azure path, where the
+pipeline is triggered by a CSV drop.
+
+**ADR-011 — SIF weighting is implemented, selectable, and off by default.**
+The n=97 evaluation showed TF-IDF beating both embedding models, and the
+diagnosis blamed mean pooling. SIF (Arora et al. 2017) was implemented to test
+that: frequency weighting plus common-component removal, in
+`embeddings/weighting.py`, selected by `--pooling sif` and stored in a separate
+index directory so both can be compared without rebuilding either.
+
+**It was measured and it does not work** — no gain for Skip-gram, a significant
+loss for FastText (PRD §8.2). The code stays rather than being reverted, for
+three reasons: the negative result should be reproducible; the ablation
+separating frequency weighting from component removal is reusable; and a future
+change to dimensionality or vocabulary could plausibly change the answer.
+*Consequence:* `pooling` defaults to `"mean"`, so nothing changes for anyone
+who does not opt in, and mean-pooled indexes built before ADR-011 still load.
+
 ## 8. Data flow — training run
 
 ```
@@ -325,25 +387,71 @@ DocumentIndex.save()  ──▶  data/processed/<kind>-<field>/vectors.npy + man
 
 ## 9. Resource budget
 
-Measured against the target machine: **4 logical cores, 7.89 GB RAM**.
+**Measured 2026-08-27** on the target machine (4 logical cores, 7.89 GB RAM,
+3.8 GB free) over the full 10,666-document corpus. These replace the estimates
+this section previously carried.
 
-| Stage | Peak RSS | Wall time | Cores used | Notes |
-|-------|----------|-----------|-----------|-------|
-| `load_corpus` | ~90 MB | 2 s | 1 | `usecols` + pyarrow engine |
-| `preprocess` (cold) | ~250 MB | ~4 min | 1 | streamed; cached to `interim/` |
-| `preprocess` (warm) | ~40 MB | 3 s | 1 | cache hit |
-| `train_skipgram` | ~500 MB | ~3 min | 3 | `workers=3`, one core reserved |
-| `train_fasttext` | ~1.1 GB | ~7 min | 3 | dominated by the bounded n-gram matrix |
-| `build_index` | ~350 MB | ~40 s | 1 | chunked at 1,000 docs |
-| **Full `make train`** | **≤ 2.5 GB** | **≤ 15 min** | 3 | never all stages resident at once |
-| Serving (UI + 2 indexes + 2 KV) | ~1.1 GB | — | 1 | mmap index, cached resources |
+| Stage | Wall time | Peak RSS | Output |
+|-------|-----------|----------|--------|
+| `load_corpus` | 0.4 s | 318 MB | 10,666 rows, 4 of 21 columns |
+| `preprocess` (cold) | 46.3 s | 313 MB | 22 MB token cache |
+| `preprocess` (warm) | 0.0 s | 318 MB | cache hit |
+| `train_skipgram` | 30.0 s | 319 MB | **10.2 MB** |
+| `train_fasttext` | 56.0 s | 346 MB | **29.3 MB** |
+| `build_index` (each) | ~7 s | 152 MB | **4.1 MB** |
+| **Full `make train`** | **2 min 22 s** | **≤ 350 MB** | 59 MB total |
+| Serving (engine + index + model) | 2.96 s cold load | **342 MB** | — |
+
+Vocabulary: 24,897 words. Out-of-vocabulary documents: **2 of 10,666 (0.02%)**.
+
+### Against the stated budget
+
+| Target | Budget | Measured | |
+|--------|--------|----------|---|
+| Full pipeline peak RSS | ≤ 2.5 GB | **~350 MB** | 7x headroom |
+| Serving RSS | ≤ 1.2 GB | **342 MB** | 3.5x headroom |
+| Training wall time | ≤ 15 min | **2 min 22 s** | 6x faster |
+| Any single artefact | ≤ 150 MB | **29.3 MB** | 5x headroom |
+| `data/` + `models/` total | ≤ 1.5 GB | **59 MB** | 25x headroom |
+| Query latency p95 (PRD G2) | < 300 ms | **3.3 ms** embedding · **128 ms** union | 2.3x faster |
+
+Latency measured over 120 queries after warm-up: p50 1.4 ms, p95 3.3 ms,
+p99 10.7 ms, max 35.8 ms. That is ADR-003 -- one BLAS matrix-vector product
+against a pre-normalised index -- rather than the legacy per-document Python
+loop.
+
+**Union retrieval costs 35x that and is still inside budget.** The shipped
+default queries both retrievers, so each search adds a sparse matrix product
+over 40,012 TF-IDF terms: p95 **128 ms** against the 300 ms target, measured
+over the 97 eval queries. The headroom drops from 90x to 2.3x, which is the
+one place union retrieval materially spends a budget rather than saving one.
+Worth watching if the corpus grows -- the TF-IDF side scales with vocabulary,
+the embedding side does not.
+
+### Artefact size against the legacy project
+
+| Artefact | Legacy | v1 | |
+|----------|--------|-----|---|
+| FastText model | 762.9 MB | **29.3 MB** | 26x smaller |
+| Skip-gram doc vectors | 20.7 MB | **4.2 MB** | 5x smaller |
+| FastText doc vectors | 20.6 MB | **4.2 MB** | 5x smaller |
+| **Total** | **804.3 MB** | **37.6 MB** | **21x smaller** |
+
+ADR-001 (bounded bucket) accounts for the model reduction; ADR-002
+(`float32` `.npy` instead of CSV) for the vector reduction.
 
 **Guard rails**
-- `medsearch doctor` refuses to start training below **2.0 GB free RAM** and warns below 3.0 GB.
+- `medsearch doctor` refuses to start training below **2.0 GB free RAM** and warns below 3.0 GB. The floor scales down for a `--limit` run (`Settings.memory_floor_gb`).
 - `runtime.configure_threads()` pins `OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1` so only gensim's `workers` are parallel.
-- Stages are separate CLI invocations, so the OS reclaims each stage's memory before the next.
-- `--limit 2000` is the documented fallback profile for a constrained session (~40 s per model).
-- `.streamlit/config.toml` sets `fileWatcherType = "none"` — the legacy default polled the whole tree, including the 800 MB artefact.
+- Stages are separate CLI invocations, so the OS reclaims each stage's memory before the next begins.
+- `--limit 2000` remains the documented fallback for a constrained session (~16 s per model, ~180 MB).
+- `.streamlit/config.toml` sets `fileWatcherType = "none"`.
+
+**Why the measurements beat the estimates so widely:** the estimates were
+written before the bucket bound and the streaming token cache were built, and
+assumed gensim's memory profile scaled with corpus size more steeply than it
+does at this vocabulary. The headroom is real, and it means the full corpus
+now trains comfortably on the dev laptop rather than needing Databricks.
 
 ## 10. Configuration & secrets
 

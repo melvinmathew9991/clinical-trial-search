@@ -13,15 +13,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 
-from medsearch.config import FieldName, ModelName, Settings
+from medsearch.config import FieldName, ModelName, Pooling, Settings
 from medsearch.data.loader import corpus_fingerprint, iter_text, load_corpus
 from medsearch.embeddings.base import ModelKind, TrainingParams
 from medsearch.embeddings.document import DocumentEmbedder, l2_normalize
 from medsearch.embeddings.registry import load_metadata, load_vectors, save_model
 from medsearch.embeddings.trainer import train_model
+from medsearch.embeddings.weighting import (
+    SifWeights,
+    principal_component,
+    remove_component,
+)
+from medsearch.exceptions import ArtefactMismatchError, ConfigurationError, StaleIndexError
 from medsearch.logging_conf import get_logger, stage
 from medsearch.preprocessing.pipeline import TextPreprocessor, TokenCache, preprocess_corpus
 from medsearch.runtime import release_memory, require_memory, warn_if_memory_tight
@@ -116,8 +123,12 @@ def train_one(
     Returns:
         A :class:`TrainingOutcome` summary.
     """
-    require_memory(settings.min_free_memory_gb, stage=f"train:{model}")
-    if warning := warn_if_memory_tight(settings.warn_free_memory_gb, stage=f"train:{model}"):
+    # Floor scales with the number of documents actually processed, so a
+    # sampled run is not blocked by the full-corpus requirement.
+    require_memory(settings.memory_floor_gb(limit), stage=f"train:{model}", limit=limit)
+    if warning := warn_if_memory_tight(
+        settings.warn_free_memory_gb, stage=f"train:{model}", limit=limit
+    ):
         logger.warning(warning)
 
     kind = ModelKind(model)
@@ -160,6 +171,7 @@ def build_index(
     field: FieldName,
     *,
     limit: int | None = None,
+    pooling: Pooling | None = None,
 ) -> DocumentIndex:
     """Embed every document and persist a normalised search index.
 
@@ -167,8 +179,13 @@ def build_index(
     the model that produced it, so pairing an index with the wrong model
     raises instead of returning quietly wrong results.
     """
-    require_memory(settings.min_free_memory_gb, stage=f"index:{model}")
+    require_memory(
+        settings.memory_floor_gb(limit, stage="index"),
+        stage=f"index:{model}",
+        limit=limit,
+    )
 
+    mode: Pooling = pooling or settings.pooling
     kind = ModelKind(model)
     paths = settings.paths
     model_dir = paths.model_path(model)
@@ -176,10 +193,29 @@ def build_index(
 
     cache, count, fingerprint = run_preprocessing(settings, field, limit=limit)
 
-    with stage(f"build_index[{model}-{field}]", logger):
+    with stage(f"build_index[{model}-{field}-{mode}]", logger):
+        weights = None
+        if mode == "sif":
+            if SifWeights.exists(model_dir):
+                weights = SifWeights.load(model_dir)
+                logger.info("Reusing SIF weights from %s", model_dir.name)
+            else:
+                weights = SifWeights.from_corpus(cache, a=settings.sif_a)
+                weights.save(model_dir)
+
         vectors = load_vectors(model_dir, kind)
-        embedder = DocumentEmbedder(vectors)
+        embedder = DocumentEmbedder(vectors, weights=weights)
         matrix = embedder.embed_corpus(cache, chunk_size=settings.chunk_size, total=count)
+
+        component = None
+        if mode == "sif":
+            # Step 2 of SIF, the one most implementations omit: strip the
+            # direction every document shares. It must happen BEFORE L2
+            # normalisation, and the same vector is applied to queries.
+            component = principal_component(matrix)
+            matrix = remove_component(matrix, component)
+            logger.info("Removed common component from %d documents", matrix.shape[0])
+
         normalised = l2_normalize(matrix)
 
         del matrix, vectors, embedder
@@ -192,8 +228,10 @@ def build_index(
             model_kind=model,
             field=field,
             corpus_fingerprint=fingerprint,
+            pooling=mode,
+            principal_component=component,
         )
-        index.save(paths.index_path(model, field))
+        index.save(paths.index_path(model, field, mode))
 
     return index
 
@@ -204,6 +242,7 @@ def load_search_engine(
     field: FieldName,
     *,
     limit: int | None = None,
+    pooling: Pooling | None = None,
 ) -> object:
     """Assemble a ready-to-query :class:`~medsearch.search.engine.SearchEngine`.
 
@@ -215,27 +254,79 @@ def load_search_engine(
     paths = settings.paths
     model_dir = paths.model_path(model)
 
+    mode: Pooling = pooling or settings.pooling
     metadata = load_metadata(model_dir, kind)
     vectors = load_vectors(model_dir, kind)
     index = DocumentIndex.load(
-        paths.index_path(model, field),
+        paths.index_path(model, field, mode),
         expected_fingerprint=metadata.fingerprint,
     )
-    corpus = load_corpus(paths.corpus_file, limit=limit)
+    weights = SifWeights.load(model_dir) if index.pooling == "sif" else None
+
+    # Align the corpus with what the index actually covers. Without this a
+    # sampled index (2,000 vectors) pairs silently with the full 10,666-row
+    # corpus: results stay correct, but 8,666 documents are unreachable and
+    # nothing anywhere says so. Same failure class as the legacy artefact
+    # mismatch -- wrong pairing, no signal.
+    effective_limit = limit if limit is not None else index.sampled_limit
+    corpus = load_corpus(paths.corpus_file, limit=effective_limit)
+
+    if index.size != len(corpus):
+        raise ArtefactMismatchError(
+            expected=f"corpus of {len(corpus)} documents",
+            actual=f"index of {index.size} documents ({index.corpus_fingerprint})",
+        )
+
+    # Third mismatch class, found in Sprint 11: the corpus file itself changed
+    # since the index was built. Row ids are POSITIONAL, so a stale index still
+    # resolves -- to the wrong documents. A result would carry one trial's
+    # title beside another trial's relevance score, which is worse than an
+    # outright failure because nothing looks broken.
+    live_fingerprint = corpus_fingerprint(paths.corpus_file)
+    expected_corpus = (
+        f"{live_fingerprint}-n{index.sampled_limit}" if index.is_sampled else live_fingerprint
+    )
+    if index.corpus_fingerprint != expected_corpus:
+        stale_size = index.size
+        index.close()
+        raise StaleIndexError(
+            expected=expected_corpus,
+            actual=index.corpus_fingerprint,
+            documents=stale_size,
+        )
+
+    if index.is_sampled:
+        logger.warning(
+            "SAMPLED INDEX: searching %d of the corpus -- this index was built "
+            "with --limit %s and is for development only. Rebuild without "
+            "--limit for full coverage.",
+            index.size,
+            index.sampled_limit,
+        )
 
     return SearchEngine(
         index=index,
-        embedder=DocumentEmbedder(vectors),
+        # The query must be embedded exactly as the documents were: same
+        # weights, and the engine strips the same principal component.
+        embedder=DocumentEmbedder(vectors, weights=weights),
         preprocessor=TextPreprocessor(),
         corpus=corpus,
     )
 
 
 def resolve_models(selection: str) -> list[ModelName]:
-    """Expand ``"all"`` into every supported model name."""
+    """Expand ``"all"`` into every supported model name.
+
+    Raises:
+        ConfigurationError: ``selection`` is not a known model or ``"all"``.
+    """
     if selection == "all":
         return ["skipgram", "fasttext"]
-    return [selection]  # type: ignore[list-item]
+    if selection not in ("skipgram", "fasttext"):
+        raise ConfigurationError(
+            f"Unknown model {selection!r}. Valid choices: skipgram, fasttext, all"
+        )
+    return [cast(ModelName, selection)]
 
 
 def artefact_report(settings: Settings) -> list[tuple[str, float]]:
@@ -255,3 +346,31 @@ def artefact_report(settings: Settings) -> list[tuple[str, float]]:
 def corpus_path(settings: Settings) -> Path:
     """Location of the source corpus."""
     return settings.paths.corpus_file
+
+
+def load_union_retriever(
+    settings: Settings,
+    model: ModelName,
+    field: FieldName,
+    *,
+    limit: int | None = None,
+) -> object:
+    """Assemble a :class:`~medsearch.search.hybrid.UnionRetriever`.
+
+    Lives here rather than in ``search`` because wiring persisted artefacts
+    together is orchestration: the search layer must not reach up into
+    pipelines, and import-linter enforces that.
+
+    The TF-IDF side is built from the same token cache the embedding side was
+    trained on, so both retrievers see identical preprocessing. Comparing them
+    under different tokenisation would measure the tokeniser, not the method.
+    """
+    from medsearch.search.baseline import TfidfBaseline
+    from medsearch.search.engine import SearchEngine
+    from medsearch.search.hybrid import UnionRetriever
+
+    engine = load_search_engine(settings, model, field, limit=limit)
+    corpus = load_corpus(settings.paths.corpus_file, limit=limit)
+    cache, _, _ = run_preprocessing(settings, field, limit=limit)
+    baseline = TfidfBaseline(cache)
+    return UnionRetriever(cast(SearchEngine, engine), baseline, corpus)

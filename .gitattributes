@@ -1,0 +1,5 @@
+# Git stores LF. Without this, editors that write CRLF made every file look
+# fully rewritten in `git diff`, which buried real changes in Sprint 8.
+* text=auto eol=lf
+*.png binary
+*.pdf binary

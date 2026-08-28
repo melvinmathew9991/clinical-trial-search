@@ -9,8 +9,8 @@ Messages follow a fixed shape: **what failed, what was expected, what to do.**
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 
 class MedSearchError(Exception):
@@ -92,6 +92,34 @@ class ArtefactMismatchError(ModelError):
             f"  Index was built from model fingerprint: {actual}\n"
             f"  Currently loaded model fingerprint:     {expected}\n"
             f"  Fix: rebuild the index with `medsearch index build`."
+        )
+        self.expected = expected
+        self.actual = actual
+
+
+class StaleIndexError(ModelError):
+    """The corpus changed after the index was built.
+
+    Distinct from :class:`ArtefactMismatchError`, which is about the *model*.
+    This one is more dangerous: row ids are positional, so a stale index still
+    resolves — to the wrong documents. A search result would carry one trial's
+    title beside another trial's relevance score, and nothing would look
+    broken.
+
+    Realistic in production: the Azure pipeline is triggered by a new CSV
+    landing in blob storage. If training fails after the drop but the app
+    restarts, it would serve the previous corpus's index against the new data.
+    """
+
+    def __init__(self, expected: str, actual: str, *, documents: int) -> None:
+        super().__init__(
+            f"Index is stale: the corpus changed after it was built.\n"
+            f"  Index was built from corpus: {actual}\n"
+            f"  data/raw currently holds:    {expected}\n"
+            f"  Why this matters: row ids are positional, so this index would\n"
+            f"  resolve to the WRONG documents rather than simply failing.\n"
+            f"  ({documents:,} vectors affected.)\n"
+            f"  Fix: medsearch train && medsearch index build"
         )
         self.expected = expected
         self.actual = actual

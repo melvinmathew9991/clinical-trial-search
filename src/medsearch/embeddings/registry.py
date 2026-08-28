@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from medsearch._typing import WordVectors
 from medsearch.embeddings.base import ModelKind, ModelMetadata
 from medsearch.exceptions import ModelNotTrainedError
 from medsearch.logging_conf import get_logger
@@ -38,7 +39,7 @@ def metadata_path(model_dir: Path) -> Path:
 
 
 def save_model(
-    vectors: object,
+    vectors: WordVectors,
     metadata: ModelMetadata,
     model_dir: Path,
     *,
@@ -59,7 +60,7 @@ def save_model(
     """
     model_dir.mkdir(parents=True, exist_ok=True)
     target = vectors_path(model_dir)
-    vectors.save(str(target))  # type: ignore[attr-defined]
+    vectors.save(str(target))  # type: ignore[attr-defined]  # not on the read protocol
 
     total_bytes = sum(f.stat().st_size for f in model_dir.glob("model.kv*") if f.is_file())
     stamped = ModelMetadata(
@@ -92,7 +93,7 @@ def save_model(
     return stamped
 
 
-def load_vectors(model_dir: Path, kind: ModelKind, *, mmap: bool = True) -> object:
+def load_vectors(model_dir: Path, kind: ModelKind, *, mmap: bool = True) -> WordVectors:
     """Load a model's ``KeyedVectors`` for serving.
 
     Args:
@@ -110,7 +111,7 @@ def load_vectors(model_dir: Path, kind: ModelKind, *, mmap: bool = True) -> obje
 
     from gensim.models import KeyedVectors
 
-    vectors = KeyedVectors.load(str(target), mmap="r" if mmap else None)
+    vectors: WordVectors = KeyedVectors.load(str(target), mmap="r" if mmap else None)
     logger.debug("Loaded %s vectors: %d words", kind, len(vectors))
     return vectors
 

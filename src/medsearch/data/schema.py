@@ -9,6 +9,7 @@ full-frame read cost (PRD F-03).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Final
 
 #: Source column name -> canonical snake_case name.
@@ -69,6 +70,6 @@ class CorpusSchema:
         return list(cls.column_map.values())
 
     @classmethod
-    def missing_required(cls, present: object) -> set[str]:
+    def missing_required(cls, present: Iterable[str]) -> set[str]:
         """Return required source columns absent from ``present``."""
-        return set(cls.required) - set(present)  # type: ignore[arg-type]
+        return set(cls.required) - set(present)

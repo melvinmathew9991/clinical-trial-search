@@ -29,6 +29,7 @@
 | Config | `pydantic-settings` | |
 | UI | `streamlit>=1.30` | |
 | Logging | stdlib `logging` | Configured once in `logging_conf.py` |
+| Sparse arrays | `scipy` | TF-IDF baseline only. Dense would be ~1.7 GB at 40k terms x 10.6k docs |
 | Tests | `pytest`, `pytest-cov` | |
 | Tooling | `ruff`, `mypy`, `import-linter`, `pre-commit` | |
 
@@ -36,7 +37,7 @@
 | Banned | Reason | Use instead |
 |--------|--------|-------------|
 | `plotly` in the UI hot path | Serialises 10k abstracts to JSON on every rerun | `st.dataframe` |
-| `scikit-learn` at runtime | Only needed for optional PCA | Move to the `[viz]` extra |
+| `scikit-learn` at runtime | Needed only for optional PCA; its TF-IDF was not worth the dependency when `scipy.sparse` does the job in 40 lines | `[viz]` extra; `search/baseline.py` |
 | `faiss`, `pinecone`, `chromadb` | Overkill at 10k docs; both memory and a dependency we do not need | numpy matmul |
 | `torch`, `transformers`, `sentence-transformers` | Explicit PRD non-goal; will not fit the memory budget | — |
 | `tensorflow`, `keras` | Same | — |
@@ -109,15 +110,17 @@ These are **hard** limits, not guidance. The target machine is 4 threads / 7.89 
 
 ```python
 MedSearchError                 # base — never raised directly
-├── ConfigurationError         # bad/missing settings
+├── ConfigurationError         # bad/missing settings, invalid CLI choice
 ├── DataError
 │   ├── CorpusNotFoundError
-│   └── SchemaValidationError  # names the offending columns
+│   ├── SchemaValidationError  # names the offending columns
+│   └── EmptyCorpusError       # loaded, but no usable text
 ├── ModelError
 │   ├── ModelNotTrainedError
-│   └── ArtefactMismatchError  # index fingerprint ≠ model fingerprint
-├── IndexError_ as IndexBuildError
-└── ResourceError              # insufficient RAM / disk before a stage
+│   ├── ArtefactMismatchError  # index fingerprint ≠ model fingerprint
+│   └── StaleIndexError        # corpus changed after the index was built
+├── IndexBuildError            # index absent, incomplete, or malformed
+└── ResourceError              # insufficient RAM before a stage
 ```
 
 **Rules**
@@ -140,13 +143,17 @@ MedSearchError                 # base — never raised directly
 ## 5. Testing
 
 - Every `src/medsearch` module has a `tests/unit/test_<module>.py`.
-- **Tests never touch the network, the 29 MB corpus, or a trained model.** Use `tests/fixtures/sample_corpus.csv` (20 rows) and a 5-dim toy model built in `conftest.py`. The suite must run in under 30 seconds on the dev laptop.
+- **Unit tests never touch the network, the 29 MB corpus, or a trained model.** Use `tests/fixtures/sample_corpus.csv` (20 rows) and the toy vectors built in `conftest.py`. The default `pytest` run is unit-only and must stay under 30 seconds.
+- **Integration tests may train**, over the 20-row fixture at 16 dimensions and one epoch. They are marked `slow` so the fast loop skips them; `make test-all` and CI run them, and that is where the coverage gate is enforced. Anything that trains a model belongs there, not in `tests/unit/`.
 - Test names describe behaviour: `test_engine_returns_empty_when_query_is_all_oov`.
 - Every bug fix ships with a regression test. The four legacy bugs each get one:
   - `test_index_written_for_fasttext_uses_fasttext_vectors` (the `K1`/`K2` swap)
   - `test_artefact_paths_are_case_consistent` (the `FastText`/`Fasttext` mismatch)
   - `test_load_corpus_returns_all_rows_by_default` (the hidden `.iloc[:100]`)
   - `test_preprocess_does_not_mutate_input_frame` (chained assignment)
+  - `test_load_raises_stale_index_error` (corpus replaced after indexing)
+  - `test_the_advertised_fallback_is_actually_permitted` (flat memory floor)
+  - `test_sampled_limit_parsing` (sampled index paired with the full corpus)
 - Coverage floor 80 % on `src/medsearch`, excluding `app/`. CI fails below it.
 - Mark anything slow `@pytest.mark.slow`; excluded from the default run.
 

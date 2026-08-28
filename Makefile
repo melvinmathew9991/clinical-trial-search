@@ -115,11 +115,11 @@ test:  ## Run the fast test suite with coverage
 	$(BIN)/pytest
 
 .PHONY: test-all
-test-all:  ## Include slow / full-corpus tests
-	$(BIN)/pytest -m ""
+test-all:  ## Full suite including integration, with the 80% coverage gate
+	$(BIN)/pytest -m "" --cov-fail-under=80
 
 .PHONY: check
-check: lint type layers test  ## Everything CI runs, locally
+check: lint type layers test-all  ## Everything CI runs, locally
 
 # ---------------------------------------------------------------- housekeeping
 .PHONY: clean

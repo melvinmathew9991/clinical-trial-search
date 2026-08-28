@@ -1,0 +1,1595 @@
+{
+  "_provenance": {
+    "labeller": "assistant",
+    "labelled_on": "2026-08-28",
+    "queries": 97,
+    "judgements": 986,
+    "sizing": "n=97 chosen by power calculation: the observed paired per-query recall difference has sd 0.308, so detecting the observed 0.088 effect at 80% power requires 97 queries. The first evaluation used 30 and could not resolve it (95% CI [-0.199, +0.014], p=0.132).",
+    "pool_depth": "Top 10 from each of Skip-gram, FastText and TF-IDF, then de-duplicated. Depth matches the evaluation cut-off (k=10); the first evaluation pooled at depth 8 while scoring at 10, so ranks 9-10 could go unjudged and depress recall.",
+    "pool_size": "1993 candidates over 100 queries, ~20 per query",
+    "method": "Read the title and abstract of every pooled candidate and judged whether the trial's subject matter substantively addresses the query. Judgements are filtered to the pool, so a carried-forward label outside the depth-10 pool is discarded.",
+    "decision_rule": "Relevant = the trial studies the queried topic, not merely mentions the query words. Population-only matches excluded (a vaccine trial whose subjects are dialysis patients is not about 'dialysis in critical illness'). Ambiguous truncated abstracts excluded, which depresses recall equally for every method. Queries were written before any results were seen and were not revised afterwards.",
+    "dropped_queries": {
+      "catching the virus a second time": "No reinfection trials in the pooled candidates - every candidate was a mouthwash/viral-load or treatment study. An unlabelled query scores 0 for every method and would read as a retrieval failure rather than a corpus gap, so it is dropped per the rule in load_eval_set.",
+      "how long to quarantine": "Every pooled candidate studies the PSYCHOLOGICAL IMPACT of quarantine; none study its DURATION, which is what the query asks. Dropped rather than relabelled, since reinterpreting a query after seeing its results is exactly the bias the protocol exists to prevent.",
+      "how long patients stay infectious": "Zero relevant candidates in the pool. NOTE: relevant trials DO exist in the corpus - CHICTR2000031244 (Shedding virus and functional prognosis) and CHICTR2100045849 (how long does the virus exist) were surfaced for OTHER queries - but no method retrieved them for this one. Dropping is correct for scoring, but this is a pooling limitation, not an absence in the corpus, and it means all three methods failed this query equally."
+    },
+    "known_bias": [
+      "The labeller also authored the retrieval system being evaluated.",
+      "Recall is measured against the pool, not the whole 10,666-document corpus - the standard TREC pooling caveat. It inflates absolute recall equally for every pooled method.",
+      "'how long patients stay infectious' was dropped for having no relevant candidate, yet relevant trials demonstrably exist in the corpus (they surfaced under other queries). No method retrieved them. Dropping is right for scoring but hides a shared failure.",
+      "Some queries are deliberately strict, e.g. 'oxygen therapy at home' counts only home/outpatient oxygen. Every method scores low on those by design."
+    ],
+    "status": "PROVISIONAL. Supersede with independent human judgements before quoting externally."
+  },
+  "queries": [
+    {
+      "query": "lung failure",
+      "relevant": [
+        "2020-001203-16",
+        "2020-001236-10",
+        "2020-001296-33",
+        "2020-001457-43",
+        "2020-001473-79",
+        "2020-001794-77",
+        "2020-001795-15",
+        "2020-001807-18",
+        "CHICTR2000034784",
+        "NCT04508933",
+        "NCT04549636",
+        "NCT04597853"
+      ],
+      "note": "Excluded 2021-000988-68 (renal failure) and CHICTR2000030014 (lung rehabilitation, not failure)."
+    },
+    {
+      "query": "breathing difficulty",
+      "relevant": [
+        "CTRI/2021/01/030729",
+        "CTRI/2021/02/031246",
+        "NCT04371029",
+        "NCT04557605",
+        "NCT04689542",
+        "NCT04810065"
+      ],
+      "note": "Excluded breathing exercises aimed at stress or sleep quality rather than dyspnea, and intubation-procedure difficulty."
+    },
+    {
+      "query": "acute respiratory distress",
+      "relevant": [
+        "2020-001379-34",
+        "2020-001391-15",
+        "2020-001505-22",
+        "2020-001541-39",
+        "2020-001618-39",
+        "2020-001640-26",
+        "2020-001748-24",
+        "2020-002193-27",
+        "2020-002322-85",
+        "2020-002913-16",
+        "2020-004408-32"
+      ],
+      "note": "All pooled candidates were genuine ARDS trials."
+    },
+    {
+      "query": "mechanical ventilation weaning",
+      "relevant": [
+        "2020-001492-33",
+        "2020-001777-71",
+        "2020-002122-82",
+        "CHICTR2000030485",
+        "CHICTR2000034784",
+        "NCT04350723",
+        "NCT04448782",
+        "NCT04632602"
+      ],
+      "note": "No trial addresses weaning specifically, so judged on ventilation management/liberation. Drug trials that merely enrol ventilated patients were excluded."
+    },
+    {
+      "query": "oxygen therapy at home",
+      "relevant": [
+        "NCT04373161",
+        "NCT04657471",
+        "NCT04849598"
+      ],
+      "note": "Deliberately strict: 'at home' excludes ICU high-flow and in-hospital oxygen titration. A hard query by design; all methods should score low."
+    },
+    {
+      "query": "kidney injury",
+      "relevant": [
+        "CHICTR2000030030",
+        "NCT04316299",
+        "NCT04355624",
+        "NCT04386564",
+        "NCT04395911",
+        "NCT04705766",
+        "NCT04806061",
+        "NCT04872764"
+      ],
+      "note": "Excluded myocardial injury, acute lung injury, and a kidney-transplant vaccination study."
+    },
+    {
+      "query": "dialysis in critical illness",
+      "relevant": [
+        "CHICTR2000030708",
+        "CTRI/2020/06/026152",
+        "CTRI/2020/12/029478",
+        "ISRCTN87042063",
+        "NCT04374058",
+        "NCT04491227",
+        "NCT04565522"
+      ],
+      "note": "Excluded general ICU trials with no renal-replacement focus, and vaccination studies whose population happens to be dialysis patients."
+    },
+    {
+      "query": "vaccine immunogenicity",
+      "relevant": [
+        "2021-000182-33",
+        "2021-001512-28",
+        "CHICTR2000039000",
+        "CHICTR2000039462",
+        "CHICTR2100041706",
+        "CHICTR2100041855",
+        "CHICTR2100042374",
+        "CHICTR2100042717",
+        "CHICTR2100046174",
+        "DRKS00025271",
+        "NCT04444674",
+        "NCT04751682",
+        "NCT04756323",
+        "NCT04758273",
+        "NCT04765436",
+        "NCT04842305",
+        "UMIN000043589"
+      ],
+      "note": "All 17 pooled candidates were immunogenicity studies."
+    },
+    {
+      "query": "antibody response after second dose",
+      "relevant": [
+        "CHICTR2000034825",
+        "CTRI/2021/04/032572",
+        "CTRI/2021/04/032729",
+        "NCT04784689",
+        "NCT04852861",
+        "NCT04885764",
+        "NCT04910295",
+        "NL9275"
+      ],
+      "note": "Excluded pure safety/efficacy trials with no humoral endpoint. NCT04910295 measures explicitly after the second dose."
+    },
+    {
+      "query": "immunocompromised vaccine recipients",
+      "relevant": [
+        "2021-000515-24",
+        "2021-001040-10",
+        "CHICTR2100045631",
+        "DRKS00024668",
+        "NCT04775069",
+        "NCT04805216",
+        "NCT04828460",
+        "NCT04832841"
+      ],
+      "note": "Requires both immunocompromise and vaccination. Excluded healthy-cohort vaccine studies and transplant infection studies with no vaccine component."
+    },
+    {
+      "query": "blood clots and anticoagulation",
+      "relevant": [
+        "2020-002190-10",
+        "ACTRN12620000517976",
+        "DRKS00021581",
+        "DRKS00022277",
+        "ISRCTN64783542",
+        "NCT04356144",
+        "NCT04366752",
+        "NCT04366960",
+        "NCT04367831",
+        "NCT04377490",
+        "NCT04394377",
+        "NCT04406389",
+        "NCT04445935",
+        "NCT04542408",
+        "NCT04623177",
+        "NCT04668404",
+        "NCT04829552",
+        "UMIN000043459"
+      ],
+      "note": "All 18 concern thrombosis or anticoagulation."
+    },
+    {
+      "query": "pulmonary embolism risk",
+      "relevant": [
+        "DRKS00021604",
+        "NCT04374617",
+        "NCT04380792",
+        "NCT04410549",
+        "NCT04420312",
+        "NCT04452422",
+        "NCT04505774",
+        "NCT04590378",
+        "NCT04696913"
+      ],
+      "note": "Excluded pulmonary fibrosis, pulmonary vascular leak and cardiac-imaging studies that share the word 'pulmonary' or 'cardiovascular' but not embolism."
+    },
+    {
+      "query": "cytokine storm treatment",
+      "relevant": [
+        "2020-001662-11",
+        "2020-005227-37",
+        "NCT04306705",
+        "NCT04365257",
+        "NCT04424056",
+        "NCT04457349",
+        "NCT04486521",
+        "NCT04560205",
+        "NL8504",
+        "UMIN000040614"
+      ],
+      "note": "Requires a treatment. Purely observational cytokine-measurement studies excluded."
+    },
+    {
+      "query": "steroid therapy for inflammation",
+      "relevant": [
+        "NCT04355247",
+        "NCT04528888",
+        "NCT04540926",
+        "NCT04551781",
+        "NCT04569825",
+        "NCT04782700",
+        "NCT04909918"
+      ],
+      "note": "Requires a corticosteroid. Many pooled candidates were other anti-inflammatories (tocilizumab, pentoxifylline, melatonin) and were excluded."
+    },
+    {
+      "query": "antiviral drug early treatment",
+      "relevant": [
+        "CHICTR2000029468",
+        "CHICTR2000030166",
+        "CHICTR2000030391",
+        "CHICTR2000030703",
+        "NCT04255017",
+        "NCT04261517",
+        "NCT04331600",
+        "NCT04355026",
+        "NCT04373044",
+        "NCT04387760",
+        "NCT04392973",
+        "NCT04768179"
+      ],
+      "note": "Excluded prophylaxis trials and an adverse-effect (liver dysfunction) study."
+    },
+    {
+      "query": "viral load reduction",
+      "relevant": [
+        "CHICTR2000030055",
+        "CHICTR2000033627",
+        "CTRI/2020/08/027465",
+        "DRKS00022484",
+        "DRKS00024454",
+        "NCT04307693",
+        "NCT04344236",
+        "NCT04349592",
+        "NCT04358081",
+        "UMIN000040816"
+      ],
+      "note": "Requires a viral-load or viral-clearance endpoint. Excluded three near-identical Siddha-medicine trials with no virological endpoint."
+    },
+    {
+      "query": "long covid fatigue",
+      "relevant": [
+        "2020-005961-16",
+        "2021-001031-72",
+        "CTRI/2020/12/029755",
+        "CTRI/2021/03/032063",
+        "NCT04363606",
+        "NCT04793269",
+        "NCT04809974",
+        "NCT04841759",
+        "NCT04851561",
+        "NCT04871815",
+        "NCT04876417",
+        "NL8947"
+      ],
+      "note": "Excluded NCT04497246 (acute-phase psychological impact and sleep, not post-COVID fatigue)."
+    },
+    {
+      "query": "loss of smell and taste",
+      "relevant": [
+        "DRKS00021516",
+        "NCT04354857",
+        "NCT04377815",
+        "NCT04427332",
+        "NCT04431908",
+        "NCT04434014",
+        "NCT04492904",
+        "NCT04696601",
+        "NCT04799977",
+        "NCT04868435",
+        "NL9238"
+      ],
+      "note": "Excluded NCT04714892 (taste and smell in obesity, not COVID) and general neuro-rehabilitation."
+    },
+    {
+      "query": "mental health of healthcare workers",
+      "relevant": [
+        "2021-001279-18",
+        "CHICTR2000030325",
+        "CTRI/2020/05/025347",
+        "CTRI/2020/09/028085",
+        "CTRI/2020/11/029159",
+        "CTRI/2020/12/029743",
+        "DRKS00021649",
+        "NCT04382196",
+        "NCT04395300",
+        "NCT04902118"
+      ],
+      "note": "Excluded NCT04448704 (migrant workers, not healthcare) and a chemoprophylaxis trial whose only link is the HCW population."
+    },
+    {
+      "query": "anxiety during the pandemic",
+      "relevant": [
+        "CHICTR2000033197",
+        "CTRI/2020/05/025347",
+        "CTRI/2020/07/026714",
+        "CTRI/2020/10/028194",
+        "CTRI/2020/11/029200",
+        "CTRI/2021/01/030297",
+        "CTRI/2021/03/032159",
+        "DRKS00022280",
+        "NCT04331106",
+        "NCT04337346",
+        "NCT04365972",
+        "NCT04386291",
+        "NCT04442360",
+        "NCT04552392",
+        "NCT04609722",
+        "NCT04686578"
+      ],
+      "note": "All 16 measure or treat pandemic-related anxiety or psychological distress."
+    },
+    {
+      "query": "pregnancy outcomes",
+      "relevant": [
+        "CHICTR2000031954",
+        "CHICTR2000032666",
+        "CTRI/2020/08/027175",
+        "CTRI/2020/10/028636",
+        "DRKS00025255",
+        "EUPAS37360",
+        "EUPAS39096",
+        "EUPAS39226",
+        "EUPAS39438",
+        "NCT04301518",
+        "NCT04323839",
+        "NCT04355234",
+        "NCT04629001",
+        "NCT04825782"
+      ],
+      "note": "Excluded 2021-000893-27 (antibody transfer in breastmilk - lactation, not a pregnancy outcome)."
+    },
+    {
+      "query": "children and adolescents",
+      "relevant": [
+        "CHICTR2000031772",
+        "CHICTR2000038827",
+        "DRKS00021229",
+        "DRKS00021521",
+        "DRKS00022380",
+        "DRKS00022868",
+        "DRKS00023525",
+        "DRKS00024203",
+        "NCT04358484",
+        "NCT04395833",
+        "NCT04449978",
+        "NCT04458246",
+        "NCT04463433",
+        "NCT04475484",
+        "NCT04618341",
+        "NCT04714606",
+        "NCT04893850"
+      ],
+      "note": "Excluded DRKS00021614 (studies the mothers, not the children) and NCT04884685 (truncated abstract, paediatric status unconfirmed)."
+    },
+    {
+      "query": "elderly care home residents",
+      "relevant": [
+        "ACTRN12620000737932",
+        "CHICTR2000033517",
+        "CHICTR2000040324",
+        "CTRI/2020/08/027435",
+        "DRKS00025288",
+        "ISRCTN11204126",
+        "ISRCTN14447421",
+        "ISRCTN18003630",
+        "NCT04435119",
+        "NCT04453553",
+        "NCT04500366",
+        "NCT04695678",
+        "NCT04872699"
+      ],
+      "note": "Excluded general palliative-care strategy and hospital-isolation studies with no care-home or elderly population."
+    },
+    {
+      "query": "diabetes as a risk factor",
+      "relevant": [
+        "2020-001929-31",
+        "NCT04324736",
+        "NCT04365634",
+        "NCT04550403",
+        "NCT04802044",
+        "NCT04879251"
+      ],
+      "note": "Requires diabetes specifically. Excluded generic 'risk factor' studies (elderly prognosis, VTE, cardiovascular) that never mention diabetes."
+    },
+    {
+      "query": "obesity and severe disease",
+      "relevant": [
+        "2020-005395-35",
+        "NCT04391738",
+        "NCT04425213",
+        "NCT04435223",
+        "NCT04674553",
+        "NL8580"
+      ],
+      "note": "Requires obesity or BMI. Most pooled candidates matched only on 'severe disease' and were excluded - a good discriminating query."
+    },
+    {
+      "query": "rehabilitation after hospital discharge",
+      "relevant": [
+        "CHICTR2000029459",
+        "CHICTR2000030418",
+        "CHICTR2000030809",
+        "CHICTR2100043682",
+        "CTRI/2021/04/032768",
+        "DRKS00023642",
+        "NCT04382534",
+        "NCT04400461",
+        "NCT04435080",
+        "NCT04615390",
+        "NCT04642040",
+        "NCT04741282",
+        "UMIN000042214"
+      ],
+      "note": "All 13 concern post-acute rehabilitation or recovery."
+    },
+    {
+      "query": "telemedicine remote monitoring",
+      "relevant": [
+        "CTRI/2020/08/026956",
+        "CTRI/2020/10/028256",
+        "NCT04341714",
+        "NCT04359225",
+        "NCT04400448",
+        "NCT04434313",
+        "NCT04444323",
+        "NCT04496713",
+        "NCT04652674",
+        "NCT04668820",
+        "NCT04670692",
+        "NCT04684836",
+        "NCT04752553",
+        "UMIN000040401"
+      ],
+      "note": "All 14 concern remote care delivery or monitoring."
+    },
+    {
+      "query": "convalescent plasma therapy",
+      "relevant": [
+        "CHICTR2000029757",
+        "CHICTR2000029850",
+        "CHICTR2000030039",
+        "CHICTR2000030702",
+        "CHICTR2000033056",
+        "CHICTR2000033323",
+        "NCT04385199",
+        "NCT04391101",
+        "NCT04392414",
+        "NCT04397523",
+        "NCT04405310",
+        "NCT04415086",
+        "NCT04570982",
+        "NCT04769245"
+      ],
+      "note": "All 14 are convalescent plasma trials."
+    },
+    {
+      "query": "monoclonal antibody treatment",
+      "relevant": [
+        "CHICTR2000030012",
+        "NCT04342195",
+        "NCT04354766",
+        "NCT04483375",
+        "NCT04596098",
+        "NCT04770467"
+      ],
+      "note": "Requires monoclonal antibodies. Excluded convalescent plasma, polyclonal hyperimmune IgG, vaccine-response studies, and antibody assays. Excluded NCT04441918 as the truncated abstract does not confirm a mAb."
+    },
+    {
+      "query": "heart damage myocarditis",
+      "relevant": [
+        "CTRI/2020/12/029981",
+        "NCT04320017",
+        "NCT04327479",
+        "NCT04375748",
+        "NCT04403607",
+        "NCT04412369",
+        "NCT04420468",
+        "NCT04498065",
+        "NCT04527835",
+        "NCT04584411",
+        "NCT04728906",
+        "NCT04753762",
+        "NCT04764032"
+      ],
+      "note": "Excluded neurological damage, kidney injury and CNS studies pooled on the shared word 'damage'."
+    },
+    {
+      "query": "prone positioning of patients",
+      "relevant": [
+        "CHICTR2000033053",
+        "CHICTR2000035907",
+        "CTRI/2020/11/029130",
+        "CTRI/2020/12/029898",
+        "NCT04344106",
+        "NCT04350723",
+        "NCT04363463",
+        "NCT04383613",
+        "NCT04384900",
+        "NCT04408222",
+        "NCT04477655",
+        "NCT04517123",
+        "NCT04581811",
+        "NCT04589936",
+        "NCT04632602",
+        "NCT04692779",
+        "NCT04760561",
+        "NCT04818164",
+        "NCT04834947"
+      ],
+      "note": ""
+    },
+    {
+      "query": "high flow nasal cannula",
+      "relevant": [
+        "CTRI/2020/12/029585",
+        "CTRI/2020/12/029711",
+        "IRCT20160516027929N8",
+        "IRCT20200611047727N4",
+        "NCT04358939",
+        "NCT04376580",
+        "NCT04395807",
+        "NCT04629989",
+        "NCT04694638",
+        "NCT04715854",
+        "NCT04799132"
+      ],
+      "note": ""
+    },
+    {
+      "query": "extracorporeal membrane oxygenation",
+      "relevant": [
+        "CHICTR2000029949",
+        "NCT04324528",
+        "NCT04340414",
+        "NCT04351906",
+        "NCT04383678",
+        "NCT04385771"
+      ],
+      "note": ""
+    },
+    {
+      "query": "tracheostomy timing in ventilated patients",
+      "relevant": [
+        "NCT04412356",
+        "NCT04447638",
+        "NCT04572438",
+        "NCT04642703",
+        "NCT04647786",
+        "NCT04654754"
+      ],
+      "note": ""
+    },
+    {
+      "query": "sedation and analgesia in intensive care",
+      "relevant": [
+        "NCT04350086",
+        "NCT04383730",
+        "NCT04415060",
+        "NCT04459533",
+        "NCT04530188",
+        "NCT04611425",
+        "NCT04667936",
+        "NCT04699916",
+        "NCT04815109",
+        "NCT04818827"
+      ],
+      "note": ""
+    },
+    {
+      "query": "lung scarring after infection",
+      "relevant": [
+        "CTRI/2020/12/029669",
+        "CTRI/2020/12/029733",
+        "CTRI/2020/12/029761",
+        "ISRCTN14376817",
+        "NCT04549636",
+        "NCT04610554",
+        "NCT04818489",
+        "NCT04856111"
+      ],
+      "note": ""
+    },
+    {
+      "query": "pneumonia severity scoring",
+      "relevant": [
+        "CHICTR2000029381",
+        "CHICTR2000029625",
+        "CHICTR2000029866",
+        "CHICTR2000030544",
+        "CHICTR2000030986",
+        "CTRI/2020/08/026983",
+        "CTRI/2020/09/028156",
+        "CTRI/2020/10/028525",
+        "CTRI/2021/01/030197",
+        "CTRI/2021/03/032204",
+        "CTRI/2021/05/033373",
+        "NCT04424849",
+        "NL8498"
+      ],
+      "note": ""
+    },
+    {
+      "query": "sepsis and septic shock",
+      "relevant": [
+        "DRKS00022841",
+        "DRKS00024162",
+        "DRKS00024561",
+        "NCT04268537",
+        "NCT04698382"
+      ],
+      "note": ""
+    },
+    {
+      "query": "irregular heartbeat and QT prolongation",
+      "relevant": [
+        "CTRI/2020/05/025089",
+        "CTRI/2020/05/025216",
+        "CTRI/2021/02/031107",
+        "EUPAS35528",
+        "NCT04422535",
+        "NCT04699097",
+        "NCT04772807",
+        "NCT04900155"
+      ],
+      "note": ""
+    },
+    {
+      "query": "heart failure management",
+      "relevant": [
+        "CTRI/2020/07/026838",
+        "ISRCTN53784122",
+        "NCT04764032",
+        "UMIN000040250"
+      ],
+      "note": ""
+    },
+    {
+      "query": "stroke and cerebrovascular events",
+      "relevant": [
+        "CTRI/2021/01/030446",
+        "ISRCTN52421361",
+        "NCT04373109",
+        "NCT04445493",
+        "NCT04452422",
+        "NCT04471831",
+        "NCT04670315",
+        "NCT04864470",
+        "NCT04875910",
+        "NCT04887272",
+        "UMIN000041226"
+      ],
+      "note": ""
+    },
+    {
+      "query": "blood pressure medication and ACE inhibitors",
+      "relevant": [
+        "DRKS00021732",
+        "NCT04272710",
+        "NCT04318418",
+        "NCT04330300",
+        "NCT04331574",
+        "NCT04351581",
+        "NCT04353596",
+        "NCT04355429",
+        "NCT04408326",
+        "NCT04559074",
+        "NCT04578236",
+        "NCT04658433",
+        "NCT04752293"
+      ],
+      "note": ""
+    },
+    {
+      "query": "confusion and delirium in hospital",
+      "relevant": [
+        "2020-005827-35",
+        "NCT04320472",
+        "NCT04405544",
+        "NCT04513314",
+        "NCT04725253",
+        "NCT04751227",
+        "NCT04775017",
+        "NCT04812041"
+      ],
+      "note": ""
+    },
+    {
+      "query": "memory problems after infection",
+      "relevant": [
+        "NCT04576351",
+        "NCT04608994",
+        "NCT04799977",
+        "NCT04846010"
+      ],
+      "note": ""
+    },
+    {
+      "query": "headache and neurological symptoms",
+      "relevant": [
+        "CTRI/2020/08/027490",
+        "DRKS00023312",
+        "NCT04362930",
+        "NCT04377425",
+        "NCT04386083",
+        "NCT04418609",
+        "NCT04496128",
+        "NCT04546737",
+        "NCT04638673",
+        "NCT04672590",
+        "NCT04860193",
+        "NCT04871815"
+      ],
+      "note": ""
+    },
+    {
+      "query": "nerve damage and weakness",
+      "relevant": [
+        "CHICTR2000038471",
+        "DRKS00021677",
+        "NCT04363749",
+        "NCT04366934",
+        "NCT04427254",
+        "NCT04578197",
+        "NCT04685213",
+        "NCT04764721",
+        "NCT04775784",
+        "NL9053"
+      ],
+      "note": ""
+    },
+    {
+      "query": "abnormal liver enzymes",
+      "relevant": [
+        "CHICTR2000030593",
+        "CTRI/2020/06/025802",
+        "NCT04345640",
+        "NCT04358380",
+        "NCT04375670",
+        "NCT04420637",
+        "NCT04439084"
+      ],
+      "note": ""
+    },
+    {
+      "query": "diarrhoea and stomach symptoms",
+      "relevant": [
+        "CHICTR2000030305",
+        "CHICTR2100043210",
+        "CTRI/2021/03/032325",
+        "NCT04544150"
+      ],
+      "note": ""
+    },
+    {
+      "query": "gut bacteria and microbiome",
+      "relevant": [
+        "CHICTR2000029999",
+        "CHICTR2000030008",
+        "CHICTR2000032737",
+        "CHICTR2100044539",
+        "NCT04355741",
+        "NCT04390477",
+        "NCT04443075",
+        "NCT04730284",
+        "NCT04793997",
+        "NCT04813718",
+        "NCT04815018",
+        "NCT04824222",
+        "NCT04836754",
+        "NCT04877704",
+        "NCT04878042",
+        "NCT04884776",
+        "NCT04894422"
+      ],
+      "note": ""
+    },
+    {
+      "query": "vitamin D supplementation",
+      "relevant": [
+        "IRCT20110726007117N11",
+        "NCT04335084",
+        "NCT04407286",
+        "NCT04407572",
+        "NCT04435119",
+        "NCT04459247",
+        "NCT04476745",
+        "NCT04489628",
+        "NCT04525820",
+        "NCT04636086",
+        "NCT04641195",
+        "NCT04793243",
+        "NCT04883203"
+      ],
+      "note": ""
+    },
+    {
+      "query": "zinc and trace element supplements",
+      "relevant": [
+        "ACTRN12620000454976",
+        "CTRI/2020/07/026340",
+        "NCT04370782",
+        "NCT04407572",
+        "NCT04447534",
+        "NCT04468139",
+        "NCT04551339",
+        "NCT04621461",
+        "NCT04641195",
+        "NCT04694716"
+      ],
+      "note": ""
+    },
+    {
+      "query": "thyroid function",
+      "relevant": [
+        "NCT04348513",
+        "NCT04659200"
+      ],
+      "note": ""
+    },
+    {
+      "query": "patients receiving chemotherapy",
+      "relevant": [
+        "2020-001250-21",
+        "2020-002119-23",
+        "CTRI/2020/10/028438",
+        "CTRI/2020/11/028859",
+        "NCT04369365",
+        "NCT04495387",
+        "NCT04567979",
+        "NCT04765215",
+        "NCT04816656",
+        "NCT04821570"
+      ],
+      "note": ""
+    },
+    {
+      "query": "low lymphocyte count",
+      "relevant": [
+        "2020-001786-36",
+        "CHICTR2000030986",
+        "CHICTR2000031115",
+        "CTRI/2020/07/026954",
+        "CTRI/2020/10/028422",
+        "CTRI/2020/12/029897",
+        "CTRI/2021/01/030789",
+        "CTRI/2021/02/031096",
+        "NCT04498325",
+        "NCT04874818"
+      ],
+      "note": ""
+    },
+    {
+      "query": "bone marrow and stem cell transplant",
+      "relevant": [
+        "CHICTR2000029816",
+        "CHICTR2000029817",
+        "CHICTR2000030088",
+        "CHICTR2000030138",
+        "CHICTR2000030173",
+        "CHICTR2000030484",
+        "CHICTR2000031430",
+        "NCT04345601",
+        "NCT04348461",
+        "NCT04365101",
+        "NCT04377334",
+        "NCT04397471",
+        "NCT04461925",
+        "NCT04467047",
+        "NCT04490486",
+        "NCT04535856",
+        "NCT04724642"
+      ],
+      "note": ""
+    },
+    {
+      "query": "secondary bacterial infection and antibiotics",
+      "relevant": [
+        "CTRI/2020/11/029289",
+        "CTRI/2021/01/030679",
+        "CTRI/2021/03/032361",
+        "DRKS00024687",
+        "ISRCTN13336322",
+        "ISRCTN66682918",
+        "NCT04378842",
+        "NCT04382092",
+        "NCT04479982",
+        "NCT04674410",
+        "UMIN000042522"
+      ],
+      "note": ""
+    },
+    {
+      "query": "fungal infection in the lungs",
+      "relevant": [
+        "DRKS00024687",
+        "NCT04368221",
+        "NCT04476758",
+        "NCT04479982",
+        "NCT04818853"
+      ],
+      "note": ""
+    },
+    {
+      "query": "new virus variants and mutations",
+      "relevant": [
+        "CHICTR2000031104",
+        "NCT04359849",
+        "NCT04844489",
+        "NCT04863547",
+        "NCT04906850"
+      ],
+      "note": ""
+    },
+    {
+      "query": "rapid antigen test accuracy",
+      "relevant": [
+        "CTRI/2021/03/031756",
+        "DRKS00023822",
+        "DRKS00023878",
+        "NCT04689399",
+        "NCT04733170",
+        "NCT04808921",
+        "NCT04839094",
+        "NCT04878068",
+        "NCT04889365",
+        "UMIN000041402",
+        "UMIN000044177"
+      ],
+      "note": ""
+    },
+    {
+      "query": "PCR test sensitivity",
+      "relevant": [
+        "CHICTR2000029810",
+        "CHICTR2000030005",
+        "CHICTR2000030721",
+        "CHICTR2000033104",
+        "CTRI/2020/07/026451",
+        "CTRI/2020/07/026499",
+        "DRKS00023822",
+        "NCT04372004",
+        "NCT04583319",
+        "NCT04629157",
+        "NCT04667442",
+        "NCT04689399",
+        "NCT04698993",
+        "NCT04878068",
+        "NL9018",
+        "UMIN000041402"
+      ],
+      "note": ""
+    },
+    {
+      "query": "chest CT scan findings",
+      "relevant": [
+        "2020-001325-31",
+        "CTRI/2020/08/027395",
+        "CTRI/2021/01/030197",
+        "CTRI/2021/02/031472",
+        "CTRI/2021/03/032292",
+        "NCT04357938",
+        "NCT04379531",
+        "NCT04424355",
+        "NCT04424849",
+        "NCT04441489",
+        "NCT04596943",
+        "NCT04645030",
+        "NL8497",
+        "NL8765"
+      ],
+      "note": ""
+    },
+    {
+      "query": "bedside lung ultrasound",
+      "relevant": [
+        "CHICTR2000030087",
+        "CHICTR2000030114",
+        "CHICTR2000030919",
+        "DRKS00021585",
+        "ISRCTN14376817",
+        "NCT04314271",
+        "NCT04370275",
+        "NCT04393402",
+        "NCT04432051",
+        "NCT04432805",
+        "NCT04513210",
+        "NCT04719234",
+        "NCT04805684",
+        "NCT04871685",
+        "NL8497"
+      ],
+      "note": ""
+    },
+    {
+      "query": "blood test for past infection",
+      "relevant": [
+        "CTRI/2020/06/025674",
+        "CTRI/2020/06/026044",
+        "DRKS00022406",
+        "NCT04360954",
+        "NCT04372004",
+        "NCT04529460",
+        "NCT04690413"
+      ],
+      "note": ""
+    },
+    {
+      "query": "machine learning for diagnosis",
+      "relevant": [
+        "CHICTR2000029779",
+        "CHICTR2000030390",
+        "CHICTR2000030830",
+        "CHICTR2000030838",
+        "CHICTR2000036217",
+        "CTRI/2020/07/026351",
+        "NCT04347369",
+        "NCT04390516",
+        "NCT04418245",
+        "NCT04423991",
+        "NCT04479319",
+        "NCT04784351",
+        "NCT04825301",
+        "NCT04828915",
+        "NCT04910191"
+      ],
+      "note": ""
+    },
+    {
+      "query": "remdesivir efficacy",
+      "relevant": [
+        "CTRI/2020/10/028657",
+        "CTRI/2021/01/030433",
+        "NCT04409262",
+        "NCT04640168",
+        "NCT04669990",
+        "NCT04693026",
+        "NCT04713176",
+        "NCT04728880",
+        "NCT04738045",
+        "NCT04871633"
+      ],
+      "note": ""
+    },
+    {
+      "query": "hydroxychloroquine outcomes",
+      "relevant": [
+        "CHICTR2000029762",
+        "CHICTR2000029898",
+        "CHICTR2000029899",
+        "NCT04261517",
+        "NCT04307693",
+        "NCT04329832",
+        "NCT04332991",
+        "NCT04334382",
+        "NCT04343092",
+        "NCT04345861",
+        "NCT04353336",
+        "NCT04355026",
+        "NCT04371523",
+        "NCT04379492",
+        "NCT04625218"
+      ],
+      "note": ""
+    },
+    {
+      "query": "ivermectin trials",
+      "relevant": [
+        "CHICTR2000033627",
+        "CTRI/2020/08/027282",
+        "NCT04351347",
+        "NCT04403555",
+        "NCT04405843",
+        "NCT04407507",
+        "NCT04703205",
+        "NCT04712279",
+        "NCT04834115"
+      ],
+      "note": ""
+    },
+    {
+      "query": "colchicine treatment",
+      "relevant": [
+        "EUPAS34810",
+        "IRCT20200707048047N1",
+        "NCT04322682",
+        "NCT04360980",
+        "NCT04367168",
+        "NCT04416334",
+        "NCT04472611",
+        "NCT04510038",
+        "NCT04603690",
+        "NCT04667780",
+        "NCT04867226"
+      ],
+      "note": ""
+    },
+    {
+      "query": "interferon therapy",
+      "relevant": [
+        "CHICTR2000030013",
+        "CHICTR2000030262",
+        "CHICTR2000030480",
+        "CHICTR2000030922",
+        "CHICTR2000031196",
+        "CTRI/2020/12/029855",
+        "IRCT20161206031256N3",
+        "NCT04293887",
+        "NCT04343768",
+        "NCT04379518",
+        "NCT04469491",
+        "NCT04494399"
+      ],
+      "note": ""
+    },
+    {
+      "query": "traditional chinese herbal medicine",
+      "relevant": [
+        "CHICTR2000029400",
+        "CHICTR2000029418",
+        "CHICTR2000029436",
+        "CHICTR2000029461",
+        "CHICTR2000029549",
+        "CHICTR2000029558",
+        "CHICTR2000029778",
+        "CHICTR2000030000",
+        "CHICTR2000030003",
+        "CHICTR2000030219",
+        "CHICTR2000030314",
+        "CHICTR2000030606",
+        "CHICTR2000030719",
+        "CHICTR2000030759",
+        "CHICTR2000032461"
+      ],
+      "note": ""
+    },
+    {
+      "query": "ayurvedic and herbal remedies",
+      "relevant": [
+        "CHICTR2000029436",
+        "CHICTR2000029461",
+        "CHICTR2000029479",
+        "CHICTR2000029558",
+        "CHICTR2000030000",
+        "CHICTR2000030988",
+        "CHICTR2000031944",
+        "CHICTR2000032461",
+        "CTRI/2020/05/025341",
+        "CTRI/2020/06/025761",
+        "CTRI/2020/06/025796",
+        "CTRI/2020/06/026181",
+        "CTRI/2020/06/026231",
+        "CTRI/2020/10/028437",
+        "CTRI/2020/12/029869",
+        "CTRI/2021/03/032072",
+        "IRCT20180712040449N2",
+        "NCT04387643"
+      ],
+      "note": ""
+    },
+    {
+      "query": "mesenchymal stem cell therapy",
+      "relevant": [
+        "CHICTR2000029816",
+        "CHICTR2000029817",
+        "CHICTR2000029990",
+        "CHICTR2000030138",
+        "CHICTR2000030173",
+        "CHICTR2000030224",
+        "CHICTR2000030300",
+        "CHICTR2000030484",
+        "CHICTR2000031319",
+        "CHICTR2000031430",
+        "NCT04302519",
+        "NCT04336254",
+        "NCT04348461",
+        "NCT04365101",
+        "NCT04366323",
+        "NCT04461925",
+        "NCT04490486"
+      ],
+      "note": ""
+    },
+    {
+      "query": "inhaled nitric oxide",
+      "relevant": [
+        "NCT04290871",
+        "NCT04306393",
+        "NCT04312243",
+        "NCT04383002",
+        "NCT04397692",
+        "NCT04456088",
+        "NCT04728919",
+        "NCT04776408"
+      ],
+      "note": ""
+    },
+    {
+      "query": "face mask effectiveness",
+      "relevant": [
+        "CTRI/2021/03/031668",
+        "NCT04630054",
+        "NCT04647305",
+        "NCT04866589"
+      ],
+      "note": ""
+    },
+    {
+      "query": "hand washing and surface disinfection",
+      "relevant": [
+        "CTRI/2021/01/030652",
+        "DRKS00022067",
+        "DRKS00022958",
+        "ISRCTN98148144",
+        "NCT04379375",
+        "NCT04399005",
+        "NCT04508114",
+        "NCT04525521",
+        "NCT04684550",
+        "UMIN000042270"
+      ],
+      "note": ""
+    },
+    {
+      "query": "lockdown and social distancing measures",
+      "relevant": [
+        "CHICTR2000033514",
+        "CTRI/2020/07/026389",
+        "CTRI/2020/11/028848",
+        "CTRI/2021/03/031945",
+        "ISRCTN17896927",
+        "NCT04361877",
+        "NCT04374643",
+        "NCT04395833",
+        "NCT04401098",
+        "NCT04406558",
+        "NCT04423978",
+        "NCT04436861",
+        "NCT04440098",
+        "NCT04492189",
+        "NCT04575571",
+        "NCT04583345",
+        "NCT04633941",
+        "NCT04700254"
+      ],
+      "note": ""
+    },
+    {
+      "query": "contact tracing technology",
+      "relevant": [
+        "DRKS00022790",
+        "ISRCTN11204126",
+        "ISRCTN14602359",
+        "ISRCTN18100261",
+        "NCT04354753",
+        "NCT04501458",
+        "NCT04625257",
+        "NCT04847479"
+      ],
+      "note": ""
+    },
+    {
+      "query": "reluctance to get vaccinated",
+      "relevant": [
+        "CHICTR2100043178",
+        "CTRI/2020/12/029884",
+        "ISRCTN15317247",
+        "NCT04371419",
+        "NCT04706403",
+        "NCT04870593",
+        "NCT04895683"
+      ],
+      "note": ""
+    },
+    {
+      "query": "protective equipment for hospital staff",
+      "relevant": [
+        "CHICTR2000032884",
+        "CHICTR2000034287",
+        "CTRI/2020/05/025274",
+        "DRKS00023184",
+        "NCT04363788",
+        "NCT04373096",
+        "NCT04416919",
+        "NCT04427176",
+        "NCT04579627",
+        "NCT04712045",
+        "NCT04866446",
+        "NCT04910880",
+        "UMIN000040162"
+      ],
+      "note": ""
+    },
+    {
+      "query": "vaccine safety in pregnancy",
+      "relevant": [
+        "2021-000440-22",
+        "DRKS00025255",
+        "NCT04705116"
+      ],
+      "note": ""
+    },
+    {
+      "query": "newborn babies of infected mothers",
+      "relevant": [
+        "2021-000893-27",
+        "CHICTR2000030865",
+        "CHICTR2000031140",
+        "ISRCTN60033461",
+        "NCT04337320",
+        "NCT04379284",
+        "NCT04386109",
+        "NCT04402918",
+        "NCT04432779",
+        "NCT04802278",
+        "NCT04883801"
+      ],
+      "note": ""
+    },
+    {
+      "query": "inflammatory syndrome in children",
+      "relevant": [
+        "CTRI/2020/11/029061",
+        "NCT04761913"
+      ],
+      "note": ""
+    },
+    {
+      "query": "people living with HIV",
+      "relevant": [
+        "2021-001054-57",
+        "CHICTR2000038866",
+        "CHICTR2100043183",
+        "CHICTR2100045631",
+        "NCT04333953",
+        "NCT04514016",
+        "NCT04526977",
+        "NCT04747756",
+        "NCT04781400",
+        "NL9214"
+      ],
+      "note": ""
+    },
+    {
+      "query": "organ transplant patients",
+      "relevant": [
+        "2020-001467-82",
+        "2021-000412-28",
+        "CTRI/2020/06/026000",
+        "EUPAS34349",
+        "NCT04341103",
+        "NCT04360707",
+        "NCT04376775",
+        "NCT04416256",
+        "NCT04494776",
+        "NCT04695756",
+        "NCT04743947",
+        "NCT04801667",
+        "NCT04828460",
+        "NCT04832841"
+      ],
+      "note": ""
+    },
+    {
+      "query": "smoking and tobacco use",
+      "relevant": [
+        "CTRI/2020/06/025673",
+        "CTRI/2020/06/025850",
+        "CTRI/2020/10/028470",
+        "CTRI/2020/12/029480",
+        "NCT04360863",
+        "NCT04399967",
+        "NCT04409496",
+        "NCT04583761",
+        "NCT04772521",
+        "NCT04838236",
+        "NCT04891796",
+        "NCT04900727",
+        "NCT04909320"
+      ],
+      "note": ""
+    },
+    {
+      "query": "ethnic minority health disparities",
+      "relevant": [
+        "ISRCTN11811602",
+        "NCT04399733",
+        "NCT04409535",
+        "NCT04448704",
+        "NCT04485377",
+        "NCT04515771",
+        "NCT04524286",
+        "NCT04542395",
+        "NCT04545593",
+        "NCT04646616",
+        "NCT04718519",
+        "NCT04731870",
+        "NCT04732715",
+        "NCT04779138",
+        "NCT04867174",
+        "NCT04888832"
+      ],
+      "note": ""
+    },
+    {
+      "query": "homeless and vulnerable people",
+      "relevant": [
+        "NCT04399733",
+        "NCT04408131",
+        "NCT04409535",
+        "NCT04438070",
+        "NCT04470648",
+        "NCT04484207",
+        "NCT04500366",
+        "NCT04747756",
+        "NL8714"
+      ],
+      "note": ""
+    },
+    {
+      "query": "prisons and detention settings",
+      "relevant": [
+        "NCT04380714",
+        "NCT04404179",
+        "NCT04516512",
+        "NCT04878328"
+      ],
+      "note": ""
+    },
+    {
+      "query": "fever and early symptoms",
+      "relevant": [
+        "2021-001144-98",
+        "CHICTR2000031366",
+        "CTRI/2020/07/026675",
+        "CTRI/2020/10/028639",
+        "DRKS00021305",
+        "NCT04274621",
+        "NCT04481360"
+      ],
+      "note": ""
+    },
+    {
+      "query": "persistent cough treatment",
+      "relevant": [
+        "2020-004715-27",
+        "2021-001144-98",
+        "CTRI/2021/03/031684",
+        "NCT04422613",
+        "NCT04695704",
+        "NCT04762693",
+        "NCT04793269",
+        "NCT04836351",
+        "NL9093"
+      ],
+      "note": ""
+    },
+    {
+      "query": "trouble sleeping",
+      "relevant": [
+        "ISRCTN43900695",
+        "NCT04299009",
+        "NCT04371029",
+        "NCT04409197",
+        "NCT04409743",
+        "NCT04451993",
+        "NCT04549350",
+        "NCT04576260",
+        "NCT04910932"
+      ],
+      "note": ""
+    },
+    {
+      "query": "quality of life after illness",
+      "relevant": [
+        "2020-005961-16",
+        "CHICTR2000030014",
+        "CHICTR2000030198",
+        "CHICTR2000031540",
+        "CTRI/2020/11/029188",
+        "NCT04377464",
+        "NCT04794374",
+        "NCT04853966"
+      ],
+      "note": ""
+    },
+    {
+      "query": "predicting who will die",
+      "relevant": [
+        "CHICTR2000030544",
+        "CHICTR2000030579",
+        "CHICTR2000030683",
+        "CHICTR2000030816",
+        "CHICTR2000033781",
+        "CTRI/2021/01/030789",
+        "CTRI/2021/03/032368",
+        "CTRI/2021/03/032453",
+        "NCT04507230",
+        "NCT04513210",
+        "NCT04713852",
+        "NCT04825301"
+      ],
+      "note": ""
+    },
+    {
+      "query": "readmission to hospital",
+      "relevant": [
+        "NCT04838106",
+        "NCT04905160"
+      ],
+      "note": ""
+    },
+    {
+      "query": "spread by people without symptoms",
+      "relevant": [
+        "ISRCTN55886926"
+      ],
+      "note": ""
+    },
+    {
+      "query": "feeding and nutrition support in hospital",
+      "relevant": [
+        "2020-000705-86",
+        "CHICTR2000030816",
+        "CHICTR2000030920",
+        "CHICTR2100043788",
+        "CTRI/2020/11/028843",
+        "NCT04451694",
+        "NCT04666558",
+        "NCT04909905",
+        "UMIN000043864"
+      ],
+      "note": ""
+    },
+    {
+      "query": "exercise training programmes",
+      "relevant": [
+        "ISRCTN11466448",
+        "ISRCTN11672329",
+        "ISRCTN14707226",
+        "NCT04323163",
+        "NCT04412343",
+        "NCT04425005",
+        "NCT04478851",
+        "NCT04482634",
+        "NCT04549337",
+        "NCT04639349",
+        "NCT04734561",
+        "NCT04797481",
+        "NCT04801316",
+        "NCT04824443",
+        "NCT04871672",
+        "UMIN000042340"
+      ],
+      "note": ""
+    }
+  ]
+}

@@ -178,7 +178,7 @@ def system_report(workers: int, disk_probe: Path | None = None) -> SystemReport:
     )
 
 
-def require_memory(minimum_gb: float, *, stage: str) -> None:
+def require_memory(minimum_gb: float, *, stage: str, limit: int | None = None) -> None:
     """Raise before an expensive stage if RAM is short.
 
     Failing here costs a second. Failing by swapping costs the session --
@@ -186,32 +186,67 @@ def require_memory(minimum_gb: float, *, stage: str) -> None:
     minutes and can take the window manager down with it.
 
     Args:
-        minimum_gb: Floor below which the stage must not start.
+        minimum_gb: Floor below which the stage must not start. Callers should
+            derive this from :meth:`~medsearch.config.Settings.memory_floor_gb`
+            so it scales with the run size.
         stage: Stage name, for the error message.
+        limit: Row cap already applied to this run. Used only to keep the
+            remediation advice honest -- suggesting ``--limit`` to someone who
+            already passed it is the bug this argument exists to prevent.
 
     Raises:
         ResourceError: When available memory is below ``minimum_gb``.
     """
     available = available_memory_gb()
-    if available < minimum_gb:
-        raise ResourceError(
-            f"Not enough free memory to start '{stage}'.\n"
-            f"  Available: {available:.2f} GB\n"
-            f"  Required:  {minimum_gb:.2f} GB\n"
-            f"  Fix: close other applications, or run a reduced profile with "
-            f"`--limit 2000`, which needs roughly 400 MB."
+    if available >= minimum_gb:
+        return
+
+    if limit is None:
+        remedy = (
+            "  Fix: close other applications, or run a reduced profile with "
+            "`--limit 2000`, which scales the requirement down accordingly."
+        )
+    else:
+        remedy = (
+            f"  Fix: this run is already sampled to {limit:,} rows and still "
+            f"needs {minimum_gb:.2f} GB. Close other applications (a browser is "
+            f"usually the largest consumer), or lower --limit further."
         )
 
+    raise ResourceError(
+        f"Not enough free memory to start '{stage}'.\n"
+        f"  Available: {available:.2f} GB\n"
+        f"  Required:  {minimum_gb:.2f} GB"
+        f"{f' (scaled for --limit {limit:,})' if limit is not None else ' (full corpus)'}\n"
+        f"{remedy}"
+    )
 
-def warn_if_memory_tight(threshold_gb: float, *, stage: str) -> str | None:
-    """Return a warning message when RAM is low but above the hard floor."""
+
+def warn_if_memory_tight(
+    threshold_gb: float, *, stage: str, limit: int | None = None
+) -> str | None:
+    """Return a warning message when RAM is low but above the hard floor.
+
+    Args:
+        threshold_gb: Advisory threshold; below this the run proceeds but is
+            expected to be slow.
+        stage: Stage name, for the message.
+        limit: Row cap already applied, so the advice does not recommend a
+            ``--limit`` the caller has already passed.
+
+    Returns:
+        A warning string, or ``None`` when memory is comfortable.
+    """
     available = available_memory_gb()
-    if available < threshold_gb:
-        return (
-            f"Only {available:.2f} GB RAM available before '{stage}'. "
-            f"Expect slow going; consider `--limit 2000` or closing other apps."
-        )
-    return None
+    if available >= threshold_gb:
+        return None
+
+    advice = (
+        "consider `--limit 2000` or closing other apps"
+        if limit is None
+        else f"already sampled to {limit:,} rows; close other apps if it stalls"
+    )
+    return f"Only {available:.2f} GB RAM available before '{stage}'. Expect slow going; {advice}."
 
 
 # ---------------------------------------------------------------- nltk

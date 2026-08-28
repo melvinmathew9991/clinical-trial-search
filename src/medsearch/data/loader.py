@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 
@@ -78,20 +79,22 @@ def load_corpus(path: Path, *, limit: int | None = None) -> pd.DataFrame:
     header = pd.read_csv(path, nrows=0)
     missing = CorpusSchema.missing_required(header.columns)
     if missing:
-        raise SchemaValidationError(missing=missing, found=list(header.columns))
+        raise SchemaValidationError(missing=sorted(missing), found=[str(c) for c in header.columns])
 
     # Only read columns that are actually present, so an export missing an
     # optional column (Phase, Date added) still loads.
     usecols = [c for c in CorpusSchema.source_columns() if c in header.columns]
     dtypes = {k: v for k, v in CorpusSchema.dtypes.items() if k in usecols}
 
-    frame = pd.read_csv(
+    # The corpus contains newlines embedded inside quoted abstracts; the C
+    # parser handles these correctly with the default quoting rules.
+    # cast on dtype only: pandas-stubs types the mapping more narrowly than
+    # the runtime accepts. The call itself is correct.
+    frame: pd.DataFrame = pd.read_csv(
         path,
         usecols=usecols,
-        dtype=dtypes,
+        dtype=cast(Any, dtypes),
         nrows=limit,
-        # The corpus contains newlines embedded inside quoted abstracts; the
-        # C parser handles these correctly with the default quoting rules.
         engine="c",
     )
     frame = frame.rename(columns=CorpusSchema.column_map)
@@ -102,9 +105,7 @@ def load_corpus(path: Path, *, limit: int | None = None) -> pd.DataFrame:
     frame = frame.dropna(subset=text_cols, how="all").reset_index(drop=True)
 
     if frame.empty:
-        raise EmptyCorpusError(
-            f"Corpus at {path} has no rows with usable text in {text_cols}."
-        )
+        raise EmptyCorpusError(f"Corpus at {path} has no rows with usable text in {text_cols}.")
 
     if limit is not None:
         logger.warning(
@@ -134,4 +135,5 @@ def iter_text(frame: pd.DataFrame, field: str) -> list[str]:
     """
     if field not in frame.columns:
         raise SchemaValidationError(missing=[field], found=list(frame.columns))
-    return frame[field].fillna("").astype(str).tolist()
+    values: list[str] = frame[field].fillna("").astype(str).tolist()
+    return values

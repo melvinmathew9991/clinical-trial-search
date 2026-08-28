@@ -23,11 +23,26 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ModelName = Literal["skipgram", "fasttext"]
 FieldName = Literal["abstract", "title"]
+Pooling = Literal["mean", "sif"]
 
 #: gensim's default is 2_000_000. At 100 dims x float32 that is exactly
 #: 800_000_000 bytes -- precisely the size of the legacy
 #: ``model_Fasttext.bin.wv.vectors_ngrams.npy``. See ADR-001.
 GENSIM_DEFAULT_BUCKET = 2_000_000
+
+#: Document count of the full Dimensions COVID-19 corpus. The memory floor is
+#: calibrated against this, then scaled down for sampled runs.
+REFERENCE_CORPUS_SIZE = 10_666
+
+#: Absolute lower bound for the memory floor. Below this, even a tiny sampled
+#: run has no headroom for the interpreter, numpy, and gensim's allocations.
+ABSOLUTE_MEMORY_FLOOR_GB = 0.5
+
+#: Indexing peaked at 152 MB against training's 346 MB on the full corpus
+#: (Architecture.md section 9), so it is gated at half the training floor.
+#: Still ~3x the measured need, but it stops a comfortable build being
+#: refused on the training budget.
+INDEX_FLOOR_FRACTION = 0.5
 
 
 class Settings(BaseSettings):
@@ -65,9 +80,27 @@ class Settings(BaseSettings):
     warn_free_memory_gb: float = Field(default=3.0, ge=0.0)
     max_artefact_mb: int = Field(default=150, ge=1)
 
+    # ------------------------------------------------------------- pooling
+    #: How a document vector is composed from its word vectors.
+    #: mean is the original behaviour; sif applies smooth inverse frequency
+    #: weighting plus common-component removal (ADR-011).
+    pooling: Pooling = "mean"
+    #: SIF smoothing constant. Performance is flat over 1e-3 to 1e-4.
+    sif_a: float = Field(default=1e-3, gt=0.0, le=1.0)
+
     # ------------------------------------------------------------- search
     top_n: int = Field(default=10, ge=1, le=100)
-    default_model: ModelName = "skipgram"
+    #: Return the union of the embedding and keyword rankings rather than
+    #: the embedding ranking alone. Lifts Recall@10 from 0.648 to 0.955 at
+    #: the cost of showing ~18 results instead of 10 (PRD 8.3).
+    union_retrieval: bool = True
+    #: FastText, not Skip-gram. The two are indistinguishable as standalone
+    #: rankers (p = 0.28 / 0.86 / 1.00), but under the union that ships they
+    #: are not: FastText reaches Recall@10 0.955 against Skip-gram's 0.927
+    #: (+0.028, 95% CI [+0.005, +0.052], p = 0.019, paired over 97 queries),
+    #: with MRR@10 no worse (+0.030, p = 0.16). It costs a 29.3 MB artefact
+    #: against 10.2 MB -- both far inside the 150 MB cap (PRD 8.4).
+    default_model: ModelName = "fasttext"
     default_field: FieldName = "abstract"
 
     # ------------------------------------------------------------- logging
@@ -108,6 +141,36 @@ class Settings(BaseSettings):
             return self.workers
         return max(1, (os.cpu_count() or 2) - 1)
 
+    def memory_floor_gb(self, limit: int | None = None, stage: str = "train") -> float:
+        """Free-RAM floor required before a run of this size may start.
+
+        The floor scales with the number of documents actually being
+        processed. A flat floor is wrong in both directions: it blocks a
+        2,000-row development run that needs ~400 MB, while being no safer for
+        the full corpus.
+
+        This previously shipped as a flat ``min_free_memory_gb``, which meant
+        the ``ResourceError`` message recommended ``--limit 2000`` as a
+        fallback that the same check then refused. Found in Track 0.
+
+        The floor is also stage-aware: indexing peaked at 152 MB against
+        training's 346 MB, so gating it on the training budget refused
+        builds that fit comfortably.
+
+        Args:
+            limit: Row cap for this run, or ``None`` for the full corpus.
+            stage: "train" or "index". Indexing gets a lower floor.
+
+        Returns:
+            Required free GB, never below :data:`ABSOLUTE_MEMORY_FLOOR_GB` and
+            never above ``min_free_memory_gb``.
+        """
+        ceiling = self.min_free_memory_gb * (INDEX_FLOOR_FRACTION if stage == "index" else 1.0)
+        if limit is None:
+            return ceiling
+        scaled = ceiling * (limit / REFERENCE_CORPUS_SIZE)
+        return max(ABSOLUTE_MEMORY_FLOOR_GB, min(scaled, ceiling))
+
     @property
     def paths(self) -> Paths:
         """Resolved project paths."""
@@ -147,9 +210,16 @@ class Paths:
         """Directory holding one model's artefacts."""
         return self.model_dir / model
 
-    def index_path(self, model: ModelName, field: FieldName) -> Path:
-        """Directory holding one document index."""
-        return self.processed_dir / f"{model}-{field}"
+    def index_path(self, model: ModelName, field: FieldName, pooling: Pooling = "mean") -> Path:
+        """Directory holding one document index.
+
+        The pooling method is part of the path so a mean index and a SIF
+        index coexist and can be compared without rebuilding either. The
+        mean case keeps the original bare name, so artefacts built before
+        SIF existed stay addressable.
+        """
+        suffix = "" if pooling == "mean" else f"-{pooling}"
+        return self.processed_dir / f"{model}-{field}{suffix}"
 
     def ensure(self) -> None:
         """Create every project directory if missing. Idempotent."""

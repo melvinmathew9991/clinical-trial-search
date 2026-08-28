@@ -1,0 +1,46 @@
+# Local container run.
+#
+#   docker compose -f deploy/docker/compose.yaml up --build
+#
+# The memory limit is deliberate: it reproduces the App Service tier the app
+# is sized for, and proves the serving path stays inside the 1.2 GB budget in
+# Architecture.md section 9 rather than only fitting on an unconstrained dev box.
+
+name: medsearch
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: medsearch:local
+    ports:
+      - "8501:8501"
+    environment:
+      MEDSEARCH_LOG_LEVEL: INFO
+      # Only gensim's workers should be parallel (ADR-008).
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+    volumes:
+      # Artefacts are mounted, never baked into the image, so a retrain rolls
+      # out without a rebuild.
+      - ../../models:/home/app/models:ro
+      - ../../data/processed:/home/app/data/processed:ro
+      - ../../data/raw:/home/app/data/raw:ro
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "2"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=4).status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped

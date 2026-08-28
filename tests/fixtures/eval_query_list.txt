@@ -1,0 +1,138 @@
+# Evaluation queries for medsearch.
+#
+# 100 queries, sized by a power calculation: the observed paired per-query
+# recall difference has sd 0.308, so detecting a 0.088 effect at 80% power
+# needs n = 97. The first evaluation used 30 and was underpowered.
+#
+# Phrased the way a clinical researcher would type them, deliberately NOT in
+# the vocabulary the abstracts use -- testing paraphrase is the point.
+# Topics span the corpus broadly; no query was chosen after seeing which
+# method it favours.
+#
+# One query per line. Lines starting with # are ignored.
+
+# --- original 30 (already labelled; retained for continuity) ---
+lung failure
+breathing difficulty
+acute respiratory distress
+mechanical ventilation weaning
+oxygen therapy at home
+kidney injury
+dialysis in critical illness
+vaccine immunogenicity
+antibody response after second dose
+immunocompromised vaccine recipients
+blood clots and anticoagulation
+pulmonary embolism risk
+cytokine storm treatment
+steroid therapy for inflammation
+antiviral drug early treatment
+viral load reduction
+long covid fatigue
+loss of smell and taste
+mental health of healthcare workers
+anxiety during the pandemic
+pregnancy outcomes
+children and adolescents
+elderly care home residents
+diabetes as a risk factor
+obesity and severe disease
+rehabilitation after hospital discharge
+telemedicine remote monitoring
+convalescent plasma therapy
+monoclonal antibody treatment
+heart damage myocarditis
+
+# --- respiratory and critical care ---
+prone positioning of patients
+high flow nasal cannula
+extracorporeal membrane oxygenation
+tracheostomy timing in ventilated patients
+sedation and analgesia in intensive care
+lung scarring after infection
+pneumonia severity scoring
+sepsis and septic shock
+
+# --- cardiovascular ---
+irregular heartbeat and QT prolongation
+heart failure management
+stroke and cerebrovascular events
+blood pressure medication and ACE inhibitors
+
+# --- neurological ---
+confusion and delirium in hospital
+memory problems after infection
+headache and neurological symptoms
+nerve damage and weakness
+
+# --- gastrointestinal and hepatic ---
+abnormal liver enzymes
+diarrhoea and stomach symptoms
+gut bacteria and microbiome
+
+# --- metabolic and nutritional ---
+vitamin D supplementation
+zinc and trace element supplements
+thyroid function
+
+# --- haematology and oncology ---
+patients receiving chemotherapy
+low lymphocyte count
+bone marrow and stem cell transplant
+
+# --- infectious disease ---
+secondary bacterial infection and antibiotics
+fungal infection in the lungs
+new virus variants and mutations
+catching the virus a second time
+
+# --- diagnostics and imaging ---
+rapid antigen test accuracy
+PCR test sensitivity
+chest CT scan findings
+bedside lung ultrasound
+blood test for past infection
+machine learning for diagnosis
+
+# --- therapeutics ---
+remdesivir efficacy
+hydroxychloroquine outcomes
+ivermectin trials
+colchicine treatment
+interferon therapy
+traditional chinese herbal medicine
+ayurvedic and herbal remedies
+mesenchymal stem cell therapy
+inhaled nitric oxide
+
+# --- prevention and public health ---
+face mask effectiveness
+hand washing and surface disinfection
+lockdown and social distancing measures
+contact tracing technology
+how long to quarantine
+reluctance to get vaccinated
+protective equipment for hospital staff
+
+# --- specific populations ---
+vaccine safety in pregnancy
+newborn babies of infected mothers
+inflammatory syndrome in children
+people living with HIV
+organ transplant patients
+smoking and tobacco use
+ethnic minority health disparities
+homeless and vulnerable people
+prisons and detention settings
+
+# --- symptoms and outcomes ---
+fever and early symptoms
+persistent cough treatment
+trouble sleeping
+quality of life after illness
+predicting who will die
+readmission to hospital
+spread by people without symptoms
+how long patients stay infectious
+feeding and nutrition support in hospital
+exercise training programmes

@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-
 import pytest
 
 from medsearch.config import Settings
@@ -30,13 +29,15 @@ class TestHiddenRowLimit:
 
     def test_load_corpus_returns_all_rows_by_default(self, corpus_csv: Path) -> None:
         frame = load_corpus(corpus_csv)
-        assert len(frame) == 5, "the full corpus must be returned when limit is None"
+        assert len(frame) == 20, "the full corpus must be returned when limit is None"
 
     def test_limit_is_opt_in_and_respected(self, corpus_csv: Path) -> None:
         frame = load_corpus(corpus_csv, limit=2)
         assert len(frame) == 2
 
-    def test_limit_emits_a_warning(self, corpus_csv: Path, caplog: pytest.LogCaptureFixture) -> None:
+    def test_limit_emits_a_warning(
+        self, corpus_csv: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         with caplog.at_level("WARNING"):
             load_corpus(corpus_csv, limit=2)
         assert "SAMPLED CORPUS" in caplog.text
@@ -173,3 +174,76 @@ class TestWorkerCount:
     def test_auto_workers_never_returns_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("medsearch.config.os.cpu_count", lambda: 1)
         assert Settings(workers=0).effective_workers == 1
+
+
+class TestScaledMemoryFloor:
+    """The memory floor was flat, so `--limit 2000` was blocked by the
+    full-corpus requirement -- while the ResourceError message recommended
+    exactly that flag as the remedy. Found during Track 0 on a machine with
+    0.79 GB free. The floor now scales with the documents actually processed.
+    """
+
+    def test_full_corpus_uses_the_configured_floor(self) -> None:
+        settings = Settings(min_free_memory_gb=2.0)
+        assert settings.memory_floor_gb(None) == 2.0
+
+    def test_sampled_run_scales_down(self) -> None:
+        settings = Settings(min_free_memory_gb=2.0)
+        assert settings.memory_floor_gb(2000) < settings.memory_floor_gb(None)
+
+    def test_sampled_floor_never_drops_below_the_absolute_minimum(self) -> None:
+        settings = Settings(min_free_memory_gb=2.0)
+        assert settings.memory_floor_gb(1) == pytest.approx(0.5)
+
+    def test_floor_never_exceeds_the_configured_maximum(self) -> None:
+        settings = Settings(min_free_memory_gb=2.0)
+        assert settings.memory_floor_gb(999_999) <= 2.0
+
+    def test_the_advertised_fallback_is_actually_permitted(self) -> None:
+        # The exact scenario that failed: 0.79 GB free, --limit 2000.
+        settings = Settings(min_free_memory_gb=2.0)
+        assert settings.memory_floor_gb(2000) <= 0.79
+
+    def test_remedy_text_does_not_suggest_limit_when_already_sampled(self) -> None:
+        from medsearch.exceptions import ResourceError
+        from medsearch.runtime import require_memory
+
+        with pytest.raises(ResourceError) as exc_info:
+            require_memory(999.0, stage="train:skipgram", limit=2000)
+        message = str(exc_info.value)
+        assert "already sampled" in message
+        assert "run a reduced profile with `--limit 2000`" not in message
+
+
+class TestSampledIndexIsDeclared:
+    """A sampled index paired silently with the full corpus.
+
+    Found in Track 0: the app loaded a 2,000-vector index alongside all 10,666
+    corpus rows. Results were correct, but 8,666 trials were unreachable and
+    nothing said so -- the same silent-mispairing class as the legacy
+    Skipgram/FastText artefact swap.
+    """
+
+    def _index(self, corpus_fingerprint: str) -> DocumentIndex:
+        return DocumentIndex(
+            vectors=np.eye(3, dtype=np.float32),
+            row_ids=np.arange(3),
+            model_fingerprint="fp",
+            model_kind="skipgram",
+            field="abstract",
+            corpus_fingerprint=corpus_fingerprint,
+        )
+
+    def test_sampled_limit_is_recovered_from_the_fingerprint(self) -> None:
+        assert self._index("abc123-n2000").sampled_limit == 2000
+
+    def test_full_corpus_index_reports_no_limit(self) -> None:
+        assert self._index("abc123").sampled_limit is None
+
+    def test_is_sampled_flag(self) -> None:
+        assert self._index("abc123-n500").is_sampled is True
+        assert self._index("abc123").is_sampled is False
+
+    def test_a_hex_fingerprint_is_not_mistaken_for_a_limit(self) -> None:
+        # 'n' followed by non-digits must not parse as a sample marker.
+        assert self._index("deadbeefncafe").sampled_limit is None

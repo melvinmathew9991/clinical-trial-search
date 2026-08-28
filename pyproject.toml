@@ -26,6 +26,7 @@ dependencies = [
     "pydantic>=2.5",
     "pydantic-settings>=2.1",
     "psutil>=5.9",
+    "scipy>=1.10",
 ]
 
 [project.optional-dependencies]
@@ -98,18 +99,21 @@ show_error_codes = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["gensim.*", "nltk.*", "streamlit.*", "wordcloud.*"]
+module = ["gensim.*", "nltk.*", "streamlit.*", "wordcloud.*", "scipy.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------- pytest
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The default invocation is the fast developer loop: unit tests only.
+# The 80% coverage gate is enforced on the FULL suite by `make test-all` and
+# CI, because pipelines/train.py is only meaningfully covered by the
+# integration tests.
 addopts = [
     "-q",
     "--strict-markers",
     "--cov=medsearch",
     "--cov-report=term-missing",
-    "--cov-fail-under=80",
     "-m", "not slow",
 ]
 markers = [
@@ -131,22 +135,37 @@ root_package = "medsearch"
 [[tool.importlinter.contracts]]
 name = "Layers are strictly ordered"
 type = "layers"
+# Listed highest to lowest. Modules joined by `|` are siblings in one layer and
+# may NOT import each other -- which is why the foundation is four layers here,
+# not one. The original single-layer version rejected `runtime -> exceptions`
+# and `logging_conf -> runtime`, both of which are correct and intended.
 layers = [
-    "medsearch.app | medsearch.cli | medsearch.pipelines",
+    "medsearch.app | medsearch.cli",
+    "medsearch.pipelines",
     "medsearch.search",
     "medsearch.embeddings",
     "medsearch.preprocessing | medsearch.data",
-    "medsearch.config | medsearch.runtime | medsearch.logging_conf | medsearch.exceptions",
+    "medsearch.logging_conf",
+    "medsearch.runtime",
+    "medsearch.exceptions | medsearch.config | medsearch._typing",
 ]
 
 [[tool.importlinter.contracts]]
-name = "Foundation layer stays dependency-free"
+name = "Foundation layer never reaches upward"
 type = "forbidden"
-source_modules = ["medsearch.config", "medsearch.exceptions", "medsearch.runtime"]
+source_modules = [
+    "medsearch.config",
+    "medsearch.exceptions",
+    "medsearch.runtime",
+    "medsearch.logging_conf",
+    "medsearch._typing",
+]
 forbidden_modules = [
     "medsearch.data",
     "medsearch.preprocessing",
     "medsearch.embeddings",
     "medsearch.search",
     "medsearch.app",
+    "medsearch.pipelines",
+    "medsearch.cli",
 ]

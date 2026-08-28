@@ -28,12 +28,24 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.11.1
+  # mypy runs from the PROJECT environment, not a pre-commit sandbox.
+  #
+  # The mirrors-mypy hook installs its own isolated venv, which cannot
+  # practically hold gensim, numpy, pandas-stubs and typer. Without typer it
+  # reported every `@app.command()` as an untyped decorator -- 7 false errors
+  # that the project mypy does not produce. A local hook has one source of
+  # truth and matches exactly what CI runs.
+  #
+  # Requires the dev extras to be installed: `make setup`.
+  - repo: local
     hooks:
       - id: mypy
+        name: mypy --strict (project env)
+        entry: mypy
+        language: system
+        types: [python]
+        pass_filenames: false
         files: ^src/medsearch/
-        additional_dependencies: [pydantic, pydantic-settings, types-psutil]
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.7.1

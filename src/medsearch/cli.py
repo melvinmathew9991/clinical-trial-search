@@ -13,11 +13,12 @@ configure_threads()  # must precede every numpy-importing module below
 
 import json  # noqa: E402
 from pathlib import Path  # noqa: E402
+from typing import cast  # noqa: E402
 
 import typer  # noqa: E402
 
-from medsearch.config import get_settings  # noqa: E402
-from medsearch.exceptions import MedSearchError  # noqa: E402
+from medsearch.config import FieldName, ModelName, Pooling, get_settings  # noqa: E402
+from medsearch.exceptions import ConfigurationError, MedSearchError  # noqa: E402
 from medsearch.logging_conf import configure_logging, get_logger  # noqa: E402
 from medsearch.runtime import (  # noqa: E402
     cpu_count,
@@ -41,6 +42,51 @@ LimitOption = typer.Option(
     "-n",
     help="Row cap for a fast, low-memory development run. Omit for the full corpus.",
 )
+
+
+VALID_MODELS = ("skipgram", "fasttext")
+VALID_FIELDS = ("abstract", "title")
+VALID_POOLING = ("mean", "sif")
+
+PoolingOption = typer.Option(
+    None,
+    "--pooling",
+    "-p",
+    help="mean | sif. Omit to use MEDSEARCH_POOLING (default mean).",
+)
+
+
+def _as_model(value: str, *, allow_all: bool = False) -> str:
+    """Validate a --model value at the CLI boundary.
+
+    Without this, an unrecognised value travelled all the way into the
+    pipeline before failing on a path that did not exist. Validating here
+    also narrows `str` to the Literal the pipeline signatures declare.
+    """
+    allowed = (*VALID_MODELS, "all") if allow_all else VALID_MODELS
+    if value not in allowed:
+        raise ConfigurationError(f"Unknown model {value!r}.\n  Valid choices: {', '.join(allowed)}")
+    return value
+
+
+def _as_field(value: str) -> FieldName:
+    """Validate a --field value at the CLI boundary."""
+    if value not in VALID_FIELDS:
+        raise ConfigurationError(
+            f"Unknown field {value!r}.\n  Valid choices: {', '.join(VALID_FIELDS)}"
+        )
+    return cast(FieldName, value)
+
+
+def _as_pooling(value: str | None) -> Pooling | None:
+    """Validate a --pooling value; None means fall back to settings."""
+    if value is None:
+        return None
+    if value not in VALID_POOLING:
+        raise ConfigurationError(
+            f"Unknown pooling {value!r}.\n  Valid choices: {', '.join(VALID_POOLING)}"
+        )
+    return cast(Pooling, value)
 
 
 def _bootstrap() -> None:
@@ -77,9 +123,7 @@ def doctor(
             f"{settings.min_free_memory_gb:.1f} GB. Close applications or use --limit 2000."
         )
     elif available < settings.warn_free_memory_gb:
-        warnings.append(
-            f"{available:.2f} GB RAM available. Training will work but may be slow."
-        )
+        warnings.append(f"{available:.2f} GB RAM available. Training will work but may be slow.")
 
     if settings.effective_workers >= cpu_count():
         warnings.append(
@@ -88,7 +132,9 @@ def doctor(
         )
 
     predicted_mb = (settings.fasttext_bucket * settings.vector_size * 4) / 1024**2
-    typer.echo(f"\n  FastText n-gram matrix: {predicted_mb:.0f} MB (bucket={settings.fasttext_bucket:,})")
+    typer.echo(
+        f"\n  FastText n-gram matrix: {predicted_mb:.0f} MB (bucket={settings.fasttext_bucket:,})"
+    )
     if predicted_mb > settings.max_artefact_mb:
         warnings.append(
             f"Predicted FastText artefact ({predicted_mb:.0f} MB) exceeds the "
@@ -107,12 +153,32 @@ def doctor(
         warnings.append(f"NLTK data unavailable: {exc}")
 
     if full:
+        from medsearch.pipelines.integrity import Severity, check_artefacts
         from medsearch.pipelines.train import artefact_report
 
         typer.echo("\n  Artefacts:")
         for name, size_mb in artefact_report(settings):
             flag = "  <-- over budget" if size_mb > settings.max_artefact_mb else ""
             typer.echo(f"    {size_mb:8.1f} MB  {name}{flag}")
+
+        typer.echo("\n  Integrity:")
+        try:
+            findings = check_artefacts(settings)
+        except MedSearchError as exc:
+            typer.secho(f"    could not verify: {exc}", fg=typer.colors.YELLOW)
+        else:
+            if not findings:
+                typer.secho(
+                    "    every artefact is consistent with its model and the live corpus",
+                    fg=typer.colors.GREEN,
+                )
+            for finding in findings:
+                colour = (
+                    typer.colors.RED if finding.severity is Severity.ERROR else typer.colors.YELLOW
+                )
+                typer.secho(f"  {finding.render()}", fg=colour)
+                if finding.severity is Severity.ERROR:
+                    problems.append(f"{finding.code}: {finding.message}")
 
     for warning in warnings:
         typer.secho(f"\n  WARN  {warning}", fg=typer.colors.YELLOW)
@@ -137,7 +203,7 @@ def preprocess(
 
     try:
         cache, count, _ = run_preprocessing(
-            get_settings(), field, limit=limit, force=force  # type: ignore[arg-type]
+            get_settings(), _as_field(field), limit=limit, force=force
         )
     except MedSearchError as exc:
         _fail(exc)
@@ -159,10 +225,8 @@ def train(
 
     settings = get_settings()
     try:
-        for name in resolve_models(model):
-            outcome = train_one(
-                settings, name, field, limit=limit, force=force  # type: ignore[arg-type]
-            )
+        for name in resolve_models(_as_model(model, allow_all=True)):
+            outcome = train_one(settings, name, _as_field(field), limit=limit, force=force)
             flag = "  [SAMPLED - development only]" if outcome.sampled else ""
             typer.secho(
                 f"  {outcome.model:<9} {outcome.documents:>6} docs | "
@@ -184,6 +248,7 @@ def index_build(
     model: str = ModelOption,
     field: str = FieldOption,
     limit: int | None = LimitOption,
+    pooling: str | None = PoolingOption,
 ) -> None:
     """Embed every document and write a searchable index."""
     _bootstrap()
@@ -191,11 +256,12 @@ def index_build(
 
     settings = get_settings()
     try:
-        for name in resolve_models(model):
-            idx = build_index(settings, name, field, limit=limit)  # type: ignore[arg-type]
+        mode = _as_pooling(pooling)
+        for name in resolve_models(_as_model(model, allow_all=True)):
+            idx = build_index(settings, name, _as_field(field), limit=limit, pooling=mode)
             typer.secho(
                 f"  {name:<9} {idx.size:>6} docs x {idx.dim} dims | "
-                f"{idx.nbytes / 1024**2:.1f} MB",
+                f"{idx.nbytes / 1024**2:.1f} MB | pooling={idx.pooling}",
                 fg=typer.colors.GREEN,
             )
     except MedSearchError as exc:
@@ -207,7 +273,7 @@ def index_info(model: str = ModelOption, field: str = FieldOption) -> None:
     """Show an index's manifest."""
     _bootstrap()
     settings = get_settings()
-    directory = settings.paths.index_path(model, field)  # type: ignore[arg-type]
+    directory = settings.paths.index_path(cast(ModelName, _as_model(model)), _as_field(field))
     manifest = directory / "manifest.json"
     if not manifest.exists():
         typer.secho(f"No index at {directory}", fg=typer.colors.RED, err=True)
@@ -219,10 +285,21 @@ def index_info(model: str = ModelOption, field: str = FieldOption) -> None:
 @app.command()
 def search(
     query: str = typer.Argument(..., help="Free-text search query."),
-    model: str = typer.Option("skipgram", "--model", "-m"),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="skipgram | fasttext. Defaults to settings.default_model (fasttext).",
+    ),
     field: str = FieldOption,
     top_n: int = typer.Option(10, "--top", "-k"),
     limit: int | None = LimitOption,
+    pooling: str | None = PoolingOption,
+    union: bool | None = typer.Option(
+        None,
+        "--union/--no-union",
+        help="Return the union of keyword and semantic results (~18 docs, recall 0.955).",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
 ) -> None:
     """Search the corpus."""
@@ -230,10 +307,28 @@ def search(
     from medsearch.pipelines.train import load_search_engine
 
     try:
-        engine = load_search_engine(
-            get_settings(), model, field, limit=limit  # type: ignore[arg-type]
-        )
-        response = engine.search(query, top_n=top_n)  # type: ignore[attr-defined]
+        settings = get_settings()
+        # Resolve from settings rather than a literal default in the signature,
+        # so changing the shipped model is a config change and not a hunt
+        # through every entry point (PRD 8.4 moved it to FastText).
+        chosen = settings.default_model if model is None else _as_model(model)
+        use_union = settings.union_retrieval if union is None else union
+        if use_union:
+            from medsearch.pipelines.train import load_union_retriever
+
+            retriever = load_union_retriever(
+                settings, cast(ModelName, chosen), _as_field(field), limit=limit
+            )
+            response = retriever.search(query, per_method=top_n)  # type: ignore[attr-defined]
+        else:
+            engine = load_search_engine(
+                settings,
+                cast(ModelName, chosen),
+                _as_field(field),
+                limit=limit,
+                pooling=_as_pooling(pooling),
+            )
+            response = engine.search(query, top_n=top_n)  # type: ignore[attr-defined]
     except MedSearchError as exc:
         _fail(exc)
         return
@@ -260,7 +355,7 @@ def search(
         )
         return
 
-    typer.echo(f"\nTop {len(response.results)} for {query!r} ({model}/{field})\n")
+    typer.echo(f"\nTop {len(response.results)} for {query!r} ({chosen}/{field})\n")
     for r in response.results:
         typer.secho(f"  {r.rank:>2}. [{r.score:.4f}] {r.trial_id}", fg=typer.colors.CYAN)
         typer.echo(f"      {r.title}")
@@ -268,22 +363,86 @@ def search(
 
 
 # ---------------------------------------------------------------- evaluate
+#: Module-level singleton so the default is not a call evaluated at import
+#: time in the signature (ruff B008).
+EvalFileOption = typer.Option(Path("tests/fixtures/eval_queries.json"), "--eval-file")
+
+
 @app.command()
 def evaluate(
     model: str = ModelOption,
     field: str = FieldOption,
-    eval_file: Path = typer.Option(
-        Path("tests/fixtures/eval_queries.json"), "--eval-file"
+    eval_file: Path = EvalFileOption,
+    pooling: str | None = PoolingOption,
+    no_baseline: bool = typer.Option(
+        False, "--no-baseline", help="Skip the TF-IDF keyword comparison."
     ),
 ) -> None:
-    """Compute Recall@k, MRR, and latency. Implemented in Sprint 8."""
+    """Measure Recall@k, MRR@k and latency against the TF-IDF baseline.
+
+    Requires a human-labelled evaluation set. Relevance judgements are never
+    generated automatically -- run `python scripts/make_eval_candidates.py` to
+    produce a candidate sheet to label.
+
+    Exits 1 when a PRD target is missed, so this can gate a release.
+    """
     _bootstrap()
+    from medsearch.pipelines.evaluate import check_targets, run_evaluation
+
+    models = ["skipgram", "fasttext"] if model == "all" else [_as_model(model)]
+
+    try:
+        report = run_evaluation(
+            get_settings(),
+            eval_path=eval_file,
+            field=_as_field(field),
+            models=cast("list[ModelName]", models),
+            include_baseline=not no_baseline,
+            pooling=_as_pooling(pooling),
+        )
+    except MedSearchError as exc:
+        _fail(exc)
+        return
+
+    typer.echo(f"\nEvaluation over {report['eval_queries']} labelled queries\n")
+    for entry in report["results"]:
+        line = (
+            f"  {entry['method']:<22} "
+            f"R@10 {float(entry['recall_at'].get('10', 0)):.3f}  "
+            f"MRR@10 {float(entry['mrr_at'].get('10', 0)):.3f}  "
+            f"p95 {float(entry['latency_ms'].get('p95', 0)):>7.2f} ms  "
+            f"docs {float(entry.get('results_shown', 0)):>4.1f}"
+        )
+        colour = typer.colors.CYAN if entry["method"] == "tfidf-baseline" else typer.colors.GREEN
+        typer.secho(line, fg=colour)
+
+    # The union returns roughly twice as many documents as the single rankers.
+    # Printing recall without that number invites reading it as a like-for-like
+    # win, which it is not -- it is a different, larger budget.
+    typer.echo("")
     typer.secho(
-        "`evaluate` is scheduled for Sprint 8 (see Phases.md). "
-        "The CLI surface is reserved; the metrics are not implemented yet.",
-        fg=typer.colors.YELLOW,
+        "  'docs' is the mean trials returned per query. Union methods return the",
+        fg=typer.colors.BRIGHT_BLACK,
     )
-    raise typer.Exit(code=2)
+    typer.secho(
+        "  union of two top-10 lists and are scored to depth 20; the single",
+        fg=typer.colors.BRIGHT_BLACK,
+    )
+    typer.secho("  rankers are scored to depth 10.", fg=typer.colors.BRIGHT_BLACK)
+
+    failures = check_targets(report)
+    typer.echo("")
+    if failures:
+        for failure in failures:
+            typer.secho(f"  MISS  {failure}", fg=typer.colors.YELLOW)
+        typer.secho(
+            "\n  A missed target is a finding, not a crash. See PRD "
+            "section 8 for what has already been tried and measured.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=1)
+
+    typer.secho("  All PRD targets met.", fg=typer.colors.GREEN)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -45,7 +45,7 @@ on that machine?" See §7 and [Architecture.md §9](./Architecture.md#9-resource
 
 | ID | Goal | Measure |
 |----|------|---------|
-| G1 | Semantic retrieval beats keyword baseline | Recall@10 ≥ 0.70 on the labelled eval set (§8) |
+| G1 | Semantic retrieval beats keyword baseline | ❌ **REFUTED.** Recall@10 0.485 vs TF-IDF 0.648, p=0.0003 at n=97. See §8.1 |
 | G2 | Query latency is interactive | p95 < 300 ms for a warm index over 10,666 docs |
 | G3 | Retraining is one command, reproducible | `medsearch train --all` yields identical artefacts for a fixed seed |
 | G4 | The corpus is fully indexed | 10,666 / 10,666 documents embedded — **not** a 100-row sample |
@@ -166,15 +166,237 @@ The legacy implementation violated every one of them, and the arithmetic is exac
 
 A held-out eval set of query → relevant-trial-id pairs lives at `tests/fixtures/eval_queries.json`.
 
-| Metric | Baseline (TF-IDF) | v1 target |
-|--------|-------------------|-----------|
-| Recall@10 | measure first | ≥ 0.70 |
-| MRR@10 | measure first | ≥ 0.45 |
-| p95 query latency | — | < 300 ms |
-| OOV query rate | — | < 5 % |
-| Peak training RSS | — | ≤ 2.5 GB |
+Measured over **97 labelled queries / 986 relevance judgements**. The union
+column is what ships (§8.4); the single-ranker columns are why.
+
+| Metric | TF-IDF baseline | Skip-gram | FastText | **Union (FastText + TF-IDF)** | Target | Met? |
+|--------|-----------------|-----------|----------|-------------------------------|--------|------|
+| Recall@10 | 0.648 | 0.469 | 0.485 | **0.955** | ≥ 0.70 | ✅ *via the union only* |
+| MRR@10 | **0.888** | 0.757 | 0.761 | 0.852 | ≥ 0.45 | ✅ |
+| Precision@1 | **0.835** | 0.670 | 0.670 | 0.753 | — | — |
+| p95 latency | 3.6 ms | 3.3 ms | 3.6 ms | 128 ms | < 300 ms | ✅ |
+| Docs returned | 10.0 | 10.0 | 10.0 | 17.7 | — | — |
+| Unanswered | 0 | 0 | 0 | 0 | < 5 % | ✅ |
+| Peak training RSS | — | ~350 MB | ~350 MB | — | ≤ 2.5 GB | ✅ |
+
+**Read the recall row against the docs row.** The union is scored to depth 20
+because a union of two top-10 lists *is* a 20-document budget. It is not a
+like-for-like win over TF-IDF@10; it is a deliberately larger result set, and
+it costs Precision@1 (0.753 against TF-IDF's 0.835) to buy the recall.
+
+An earlier version of this table carried the n=30 numbers (Recall@10 0.647 /
+0.559 / 0.539, Precision@1 0.900 / 0.700 / 0.667). Those are superseded — the
+eval set was resized to 97 by a power calculation in §8.1.
 
 `medsearch evaluate` computes these and writes `reports/evaluation.json`.
+
+### 8.1 G1 is not met: the keyword baseline wins, confirmed at adequate power
+
+Measured 2026-08-28 over **97 labelled queries / 986 relevance judgements**.
+The set was sized by a power calculation after a first attempt at n=30 proved
+underpowered (95% CI on the recall difference then: [−0.199, **+0.014**]).
+
+| Method | Recall@10 | MRR@10 | Precision@1 |
+|--------|-----------|--------|-------------|
+| **TF-IDF baseline** | **0.648** | **0.888** | **0.680** |
+| FastText | 0.485 | 0.761 | 0.515 |
+| Skip-gram | 0.469 | 0.757 | 0.515 |
+
+**Every gap is statistically significant and survives Bonferroni correction**
+(α = 0.0167 across three metrics), paired over the same queries with 20,000
+bootstrap resamples and 20,000 permutations:
+
+| Comparison | Δ | 95% CI | p |
+|------------|---|--------|---|
+| Skip-gram − TF-IDF, Recall@10 | −0.179 | [−0.256, −0.101] | <0.0001 |
+| FastText − TF-IDF, Recall@10 | −0.163 | [−0.249, −0.078] | 0.0003 |
+| Skip-gram − TF-IDF, MRR@10 | −0.131 | [−0.208, −0.054] | 0.0014 |
+| FastText − TF-IDF, MRR@10 | −0.127 | [−0.208, −0.047] | 0.0031 |
+| Skip-gram − TF-IDF, P@1 | −0.165 | [−0.278, −0.062] | 0.0058 |
+| FastText − TF-IDF, P@1 | −0.165 | [−0.278, −0.052] | 0.0082 |
+
+Per query, TF-IDF wins 56, the embeddings win 28, 13 ties — not the 13–13 tie
+the underpowered set suggested. **FastText and Skip-gram are statistically
+indistinguishable from each other** on all three metrics (p = 0.28, 0.86, 1.00),
+so the character n-grams buy nothing measurable here.
+
+**Conclusion: the project's central premise does not hold as built.** In-domain
+mean-pooled word embeddings are beaten by a 40-line TF-IDF baseline on this
+corpus and this query set.
+
+**The paraphrase advantage is real but narrow.** Embeddings still win where no
+lexical overlap exists — `mechanical ventilation weaning` retrieves
+ventilation-liberation trials although no abstract contains "weaning". That
+capability simply does not compensate, because most realistic clinical queries
+contain a rare, decisive term (`colchicine`, `remdesivir`, `steroid`,
+`ECMO`) that IDF weights heavily and mean pooling averages away.
+
+**Diagnosis at the time: mean pooling.** Averaging treats `colchicine` and
+`patients` as equally informative, discarding the signal IDF supplies.
+**This diagnosis was tested and refuted — see §8.2.** Reweighting the
+average does not recover what a 100-dimensional dense vector loses.
+
+**Remediation candidates, in the order they were tried:**
+1. ~~**SIF / IDF-weighted document vectors**~~ — implemented and **measured to
+   fail**. See §8.2. The diagnosis above turned out to be wrong.
+2. ~~**Hybrid retrieval**~~ — rank fusion measured at **+0.0005 (p = 0.98)**
+   before being built. See §8.3. The complementarity is real but cannot be
+   cashed in by reranking at a fixed result budget.
+
+The powered eval set did its job: it was able to say that SIF does not work,
+which the n=30 set could not have.
+
+### 8.2 SIF weighting was implemented and does NOT work
+
+The §8.1 diagnosis said the failure was mean pooling, and named SIF /
+IDF-weighted document vectors as the fix. That was implemented (ADR-011,
+`embeddings/weighting.py`) and measured on the same 97 queries. **It does not
+close the gap, and for FastText it makes things significantly worse.**
+
+| Method | Recall@10 mean | Recall@10 SIF | Δ | |
+|--------|----------------|---------------|---|---|
+| Skip-gram | 0.469 | 0.450 | −0.019 | ns (p = 0.35) |
+| FastText | 0.485 | 0.432 | −0.053 | **significant** (CI [−0.102, −0.007]) |
+| TF-IDF baseline | 0.648 | — | — | still ahead of everything |
+
+An ablation separates SIF's two steps and shows the weighting is what fails,
+not the implementation of the second step:
+
+| Variant | Skip-gram R@10 | FastText R@10 |
+|---------|----------------|----------------|
+| mean pooling | 0.469 | 0.485 |
+| SIF weights only | 0.447 | 0.432 |
+| SIF weights + common-component removal | 0.450 | 0.432 |
+
+Common-component removal changes nothing measurable either way
+(Δ = +0.003 / −0.001, both ns). The frequency weighting itself is what costs
+recall.
+
+**The §8.1 diagnosis was wrong.** "The failure is mean pooling, not the
+embeddings" implied a fixable pooling defect. The evidence says otherwise, and
+the better explanation is:
+
+1. **Reweighting cannot recover lexical precision from a dense average.**
+   TF-IDF matches exactly in a 40,012-dimensional sparse space where
+   `colchicine` is its own coordinate. Upweighting `colchicine` inside a
+   100-dimensional average still blurs it against every other word in the
+   abstract. Dimensionality, not weighting, is the binding constraint.
+2. **Upweighting rare words amplifies their noise.** Rare words have the
+   fewest training examples and therefore the least reliable vectors. SIF puts
+   the most weight on exactly the least trustworthy directions — which also
+   explains why FastText suffers most, since its rare-word vectors are
+   synthesised from character n-grams rather than observed directly.
+
+**The remaining candidate is the hybrid**, previously second on the list and
+now the only one still standing: keep TF-IDF for lexical precision and add
+embeddings for the 28 queries they win. That combination does not require the
+dense representation to do something it structurally cannot.
+
+SIF stays in the codebase — selectable via `--pooling sif`, defaulting off,
+and covered by tests — so the negative result stays reproducible rather than
+becoming folklore.
+
+### 8.3 The hybrid was measured before being built — and is not worth building
+
+SIF failed (§8.2), leaving the TF-IDF + embedding hybrid as the last candidate.
+Rather than build it, rank fusion was measured directly. It does not work
+either, but the reason is worth recording because it points somewhere useful.
+
+**Reciprocal Rank Fusion at a fixed budget of 10 documents:**
+
+| Method | Docs returned | Recall@10 | vs TF-IDF |
+|--------|---------------|-----------|-----------|
+| TF-IDF | 10 | 0.648 | — |
+| FastText | 10 | 0.485 | — |
+| **RRF over both top-10 lists** | 10 | **0.648** | **+0.0005, p = 0.98** |
+| RRF over both top-30 lists | 10 | 0.560 | −0.087, **significantly worse** |
+
+Fusion delivers *nothing*. Going deeper into the embedding ranking actively
+hurts, because it trades reliable TF-IDF hits for unreliable embedding ones.
+
+**But the complementarity is real, and it is not a depth artefact:**
+
+| Method | Docs returned | Recall |
+|--------|---------------|--------|
+| TF-IDF, depth-matched | 20 | 0.715 |
+| **Union of both top-10 lists** | 20 | **0.955** |
+
+Union beats depth-matched TF-IDF by **+0.240 (p < 0.0001)**. Of the 496
+relevant documents the embeddings retrieve, **326 (66%) are ones TF-IDF never
+returns**, and on **80 of 97 queries** the embeddings contribute at least one
+document TF-IDF misses.
+
+**The resolution.** The two methods genuinely find different relevant
+documents, but at a fixed budget of ten results a fusion must *drop* a TF-IDF
+hit to admit an embedding hit, and TF-IDF's are more often correct. The
+complementarity is real and simultaneously unusable by reranking alone.
+
+**What this actually implies — a product decision, not a modelling one.**
+Cashing in the complementarity requires either
+
+1. **A larger result budget.** Returning the 20-document union instead of
+   TF-IDF's top 10 lifts recall from 0.648 to **0.955** — comfortably past the
+   0.70 target — at the cost of showing twice as many results. For a research
+   tool whose user scans a list of trials, that trade is probably right, and it
+   requires no new modelling at all.
+2. **A second-stage reranker** over the 20-candidate union. That means a
+   cross-encoder, which PRD §5 excludes as a non-goal and which will not fit
+   the memory budget in G6.
+
+**Recommendation: do not build the fusion hybrid.** It is measured at +0.0005.
+Take route 1 if the product can show 20 results; otherwise ship TF-IDF as the
+ranker and keep the embedding index for the paraphrase queries it uniquely
+serves.
+
+### 8.4 What ships: the union, FastText, and the defaults left alone
+
+**The union ships, on by default.** Recall@10 **0.955** against the 0.70 target,
+MRR@10 0.852 against 0.45, p95 128 ms against 300 ms. It is switchable
+(`--no-union`, and a sidebar toggle) because it buys that recall with ~17.7
+results instead of 10 and gives up Precision@1 (0.753 against TF-IDF's 0.835).
+For a researcher who must not miss a relevant trial, recall is the metric that
+matters; for anyone who wants the tightest list, the toggle is there.
+
+**FastText is the default model, not Skip-gram.** As standalone rankers the two
+are indistinguishable (p = 0.28 / 0.86 / 1.00, §8.1), which is why the choice
+looked arbitrary. Under the union it is not:
+
+| Comparison | Skip-gram | FastText | Effect | 95% CI | p |
+|---|---|---|---|---|---|
+| Union Recall@10 | 0.927 | **0.955** | +0.028 | [+0.005, +0.052] | **0.019** |
+| Union MRR@10 | 0.822 | 0.852 | +0.030 | [−0.011, +0.073] | 0.157 |
+
+Better on recall, no worse on ranking, for a 29.3 MB artefact against 10.2 MB —
+both far inside the 150 MB cap. Reproduce with
+`python scripts/significance.py union-skipgram union-fasttext`, which is
+committed precisely so these numbers stop being ad-hoc.
+
+**The hyperparameter sweep changes nothing, and the noise floor is why.**
+One-factor-at-a-time around the shipped defaults, full corpus, 97 queries
+(`python scripts/sweep.py` → `reports/sweep.json`):
+
+| Config | Recall@10 | Δ | Union Recall@10 | Δ |
+|---|---|---|---|---|
+| baseline (100 / 5 / 2 / 5) | 0.4548 | — | 0.9089 | — |
+| `vector_size=200` | 0.4722 | +0.017 | 0.9042 | −0.005 |
+| `vector_size=300` | 0.4715 | +0.017 | 0.9005 | −0.009 |
+| `window=10` | 0.4940 | +0.039 | 0.9223 | +0.013 |
+| `min_count=5` | 0.4793 | +0.025 | 0.9183 | +0.009 |
+| `epochs=15` | 0.4946 | +0.040 | 0.9040 | −0.005 |
+
+**The largest effect is +0.040, and the gap to TF-IDF is 0.19.** No knob is
+within a factor of four of closing it, which is the answer the sweep was run to
+get.
+
+**Read those deltas against retraining noise.** The sweep's baseline config is
+byte-identical to the shipped Skip-gram's, and scores 0.4548 against the
+shipped model's 0.4691 — a spread of **0.0143 from retraining alone**, because
+Gensim's multi-worker training is not deterministic even at a fixed seed. The
+two largest effects (+0.039, +0.040) are under 3x that, from a single
+unreplicated run each. **Defaults stay as they are.** Promoting `window=10` or
+`epochs=15` on this evidence would be reading noise as signal — the same
+mistake §8.2 and §8.3 were run to avoid, and the union numbers they produce
+(+0.013 at best) are inside the noise band anyway.
 
 ## 9. Constraints & assumptions
 
