@@ -45,7 +45,7 @@ on that machine?" See §7 and [Architecture.md §9](./Architecture.md#9-resource
 
 | ID | Goal | Measure |
 |----|------|---------|
-| G1 | Semantic retrieval beats keyword baseline | ❌ **REFUTED.** Recall@10 0.485 vs TF-IDF 0.648, p=0.0003 at n=97. See §8.1 |
+| G1 | Semantic retrieval beats keyword baseline | ❌ **REFUTED.** On the re-judged set, FastText Recall@10 0.353 against TF-IDF 0.459 and BM25 0.471; nDCG@10 0.662 against 0.797 / 0.799. See §8.1 and [EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) |
 | G2 | Query latency is interactive | p95 < 300 ms for a warm index over 10,666 docs |
 | G3 | Retraining is one command, reproducible | `medsearch train --all` yields identical artefacts for a fixed seed |
 | G4 | The corpus is fully indexed | 10,666 / 10,666 documents embedded — **not** a 100-row sample |
@@ -177,23 +177,33 @@ The legacy implementation violated every one of them, and the arithmetic is exac
 
 A held-out eval set of query → relevant-trial-id pairs lives at `tests/fixtures/eval_queries.json`.
 
-Measured over **97 labelled queries / 986 relevance judgements**. The union
-column is what ships (§8.4); the single-ranker columns are why.
+Measured over **97 labelled queries / 1,691 relevance judgements** — the
+round-2, re-judged set. The union column is what ships (§8.4); the
+single-ranker columns are why.
 
-| Metric | TF-IDF baseline | Skip-gram | FastText | **Union (FastText + TF-IDF)** | Target | Met? |
-|--------|-----------------|-----------|----------|-------------------------------|--------|------|
-| Recall@10 | 0.648 | 0.469 | 0.485 | **0.955** | ≥ 0.70 | ✅ *via the union only* |
-| MRR@10 | **0.888** | 0.757 | 0.761 | 0.852 | ≥ 0.45 | ✅ |
-| Precision@1 | **0.835** | 0.670 | 0.670 | 0.753 | — | — |
-| p95 latency | 3.6 ms | 3.3 ms | 3.6 ms | 128 ms | < 300 ms | ✅ |
-| Docs returned | 10.0 | 10.0 | 10.0 | 17.7 | — | — |
-| Unanswered | 0 | 0 | 0 | 0 | < 5 % | ✅ |
-| Peak training RSS | — | ~350 MB | ~350 MB | — | ≤ 2.5 GB | ✅ |
+| Metric | TF-IDF | BM25 | Skip-gram | FastText | **Union (FastText + TF-IDF)** | Target | Met? |
+|--------|--------|------|-----------|----------|-------------------------------|--------|------|
+| Recall@10 | 0.459 | 0.471 | 0.351 | 0.353 | **0.702** | ≥ 0.70 | ⚠️ *via the union only, at a 20-document budget* |
+| nDCG@10 | 0.797 | **0.799** | 0.655 | 0.662 | 0.746 | — | — |
+| R-precision | 0.449 | 0.458 | 0.346 | 0.351 | **0.616** | — | — |
+| MRR@10 | **0.952** | 0.909 | 0.818 | 0.818 | 0.890 | ≥ 0.45 | ✅ |
+| Precision@1 | **0.918** | 0.856 | 0.742 | 0.732 | 0.830 | — | — |
+| p95 latency | 3.5 ms | 13.4 ms | 2.4 ms | 2.5 ms | 122 ms | < 300 ms | ✅ |
+| Docs returned | 10.0 | 10.0 | 10.0 | 10.0 | 17.8 | — | — |
+| Unanswered | 0 | 0 | 0 | 0 | 0 | < 5 % | ✅ |
+| Peak training RSS | — | — | ~350 MB | ~350 MB | — | ≤ 2.5 GB | ✅ |
 
-**Read the recall row against the docs row.** The union is scored to depth 20
-because a union of two top-10 lists *is* a 20-document budget. It is not a
-like-for-like win over TF-IDF@10; it is a deliberately larger result set, and
-it costs Precision@1 (0.753 against TF-IDF's 0.835) to buy the recall.
+**Read the recall row against the docs row, and against the ceiling.** The
+union is scored to depth 20 because a union of two top-10 lists *is* a
+20-document budget. It is not a like-for-like win over TF-IDF@10; it is a
+deliberately larger result set, and it costs Precision@1 (0.830 against
+TF-IDF's 0.918) to buy the recall. With 17.4 relevant documents per query the
+attainable Recall@10 is **0.626** at depth 10 and 0.951 at depth 20, so no
+depth-10 system can approach 0.70 on this set at all. And on nDCG@10 — the one
+metric here not capped by that ceiling — both lexical baselines *beat* the
+union. **The DoD is met on the number and not on the reading:** what the union
+provides is a wider net, not better ranking. See
+[EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) §7.
 
 An earlier version of this table carried the n=30 numbers (Recall@10 0.647 /
 0.559 / 0.539, Precision@1 0.900 / 0.700 / 0.667). Those are superseded — the
@@ -203,7 +213,10 @@ eval set was resized to 97 by a power calculation in §8.1.
 
 ### 8.1 G1 is not met: the keyword baseline wins, confirmed at adequate power
 
-Measured 2026-08-28 over **97 labelled queries / 986 relevance judgements**.
+Measured 2026-08-28 over **97 labelled queries / 986 relevance judgements**
+— *round 1, on the pool these systems helped build. The direction survives
+re-judging (TF-IDF 0.459 against FastText 0.353) but the intervals below have
+not been recomputed; see [EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) §7.*
 The set was sized by a power calculation after a first attempt at n=30 proved
 underpowered (95% CI on the recall difference then: [−0.199, **+0.014**]).
 
@@ -263,6 +276,12 @@ The §8.1 diagnosis said the failure was mean pooling, and named SIF /
 IDF-weighted document vectors as the fix. That was implemented (ADR-011,
 `embeddings/weighting.py`) and measured on the same 97 queries. **It does not
 close the gap, and for FastText it makes things significantly worse.**
+
+> *Round-1 numbers throughout §8.2 and §8.3, on the pool the scored systems
+> helped build. SIF and RRF were not re-scored on the re-judged set — both were
+> killed, and re-scoring a dead branch buys nothing. The comparisons here are
+> internally consistent (every system in them contributed to that pool), which
+> is exactly the condition §6 of the audit says must hold.*
 
 | Method | Recall@10 mean | Recall@10 SIF | Δ | |
 |--------|----------------|---------------|---|---|
@@ -349,7 +368,10 @@ Cashing in the complementarity requires either
    TF-IDF's top 10 lifts recall from 0.648 to **0.955** — comfortably past the
    0.70 target — at the cost of showing twice as many results. For a research
    tool whose user scans a list of trials, that trade is probably right, and it
-   requires no new modelling at all.
+   requires no new modelling at all. *On the re-judged set the same move reads
+   0.459 → 0.702: still past the target, but only just, and the union's nDCG@10
+   (0.746) falls below TF-IDF's (0.797). The trade is real; it is a coverage
+   gain paid for with ranking quality.*
 2. **A second-stage reranker** over the 20-candidate union. That means a
    cross-encoder, which PRD §5 excludes as a non-goal and which will not fit
    the memory budget in G6.
@@ -361,12 +383,19 @@ serves.
 
 ### 8.4 What ships: the union, FastText, and the defaults left alone
 
-**The union ships, on by default.** Recall@10 **0.955** against the 0.70 target,
-MRR@10 0.852 against 0.45, p95 128 ms against 300 ms. It is switchable
-(`--no-union`, and a sidebar toggle) because it buys that recall with ~17.7
-results instead of 10 and gives up Precision@1 (0.753 against TF-IDF's 0.835).
-For a researcher who must not miss a relevant trial, recall is the metric that
-matters; for anyone who wants the tightest list, the toggle is there.
+**The union ships, on by default.** On the re-judged set: Recall@10 **0.702**
+against the 0.70 target, MRR@10 0.890 against 0.45, p95 122 ms against 300 ms.
+It is switchable (`--no-union`, and a sidebar toggle) because it buys that
+recall with ~17.8 results instead of 10 and gives up Precision@1 (0.830 against
+TF-IDF's 0.918) and nDCG@10 (0.746 against 0.797). For a researcher who must
+not miss a relevant trial, recall is the metric that matters; for anyone who
+wants the tightest, best-ranked list, the toggle is there.
+
+> **This decision is now open again.** It was made when the union scored 0.955
+> against TF-IDF's 0.648 — a margin that turned out to be pool membership. At
+> 0.702 against 0.459, with the ranking metrics pointing the other way, "ship
+> the wider net by default" is a product call that deserves re-making rather
+> than inheriting. See [EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) §7.
 
 **FastText is the default model, not Skip-gram.** As standalone rankers the two
 are indistinguishable (p = 0.28 / 0.86 / 1.00, §8.1), which is why the choice
@@ -376,6 +405,10 @@ looked arbitrary. Under the union it is not:
 |---|---|---|---|---|---|
 | Union Recall@10 | 0.927 | **0.955** | +0.028 | [+0.005, +0.052] | **0.019** |
 | Union MRR@10 | 0.822 | 0.852 | +0.030 | [−0.011, +0.073] | 0.157 |
+
+*Round-1 intervals. On the re-judged set the same gap is 0.702 against 0.687
+(+0.015) and 0.746 against 0.733 on nDCG@10 — same direction, not re-tested for
+significance. FastText stays the default; nothing here argues for switching.*
 
 Better on recall, no worse on ranking, for a 29.3 MB artefact against 10.2 MB —
 both far inside the 150 MB cap. Reproduce with

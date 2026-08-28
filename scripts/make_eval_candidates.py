@@ -5,12 +5,19 @@ retrieval metric is measured against, and a machine-generated judgement would
 be circular — the retrieval system grading its own homework.
 
 What it does is turn labelling from a writing task into a reviewing one. For
-each query it pools candidates from *three* sources so no single method's
+each query it pools candidates from *four* sources so no single method's
 biases dominate the pool:
 
 * Skip-gram embeddings
 * FastText embeddings
 * TF-IDF keyword baseline
+* Okapi BM25 keyword baseline
+
+BM25 was added after round 2 of the evaluation audit. It had been scored
+against a pool it never contributed to, and 63.2 % of its top-10 came back
+unjudged as a result -- read as a 21-point deficit to TF-IDF that turned out to
+be pool membership and nothing else. A system that will be *scored* must also
+*contribute*, or the comparison is not symmetric. See EVALUATION_AUDIT.md.
 
 That pooling design is standard TREC practice, and it matters here: if
 candidates came only from the embedding models, any document that only keyword
@@ -106,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     from medsearch.pipelines.train import load_search_engine, run_preprocessing
     from medsearch.preprocessing.pipeline import TextPreprocessor
     from medsearch.search.baseline import TfidfBaseline
+    from medsearch.search.bm25 import BM25Baseline
 
     queries = _load_queries(args.queries)
     logger.info("Pooling candidates for %d queries", len(queries))
@@ -119,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         trial_ids = corpus["trial_id"].astype(str).tolist()
         cache, _, _ = run_preprocessing(settings, args.field)
         baseline = TfidfBaseline(cache)
+        bm25 = BM25Baseline(cache)
         preprocessor = TextPreprocessor()
     except MedSearchError as exc:
         print(f"\n{exc}\n", file=sys.stderr)
@@ -145,6 +154,8 @@ def main(argv: list[str] | None = None) -> int:
         tokens = preprocessor.transform(query)
         for hit in baseline.search(tokens, top_n=args.top_n):
             pooled.setdefault(trial_ids[hit.row_id], set()).add("tfidf")
+        for hit in bm25.search(tokens, top_n=args.top_n):
+            pooled.setdefault(trial_ids[hit.row_id], set()).add("bm25")
 
         candidates = [
             {**by_trial[tid], "found_by": sorted(sources)}

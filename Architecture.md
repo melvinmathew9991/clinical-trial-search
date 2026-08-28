@@ -479,6 +479,36 @@ one place union retrieval materially spends a budget rather than saving one.
 Worth watching if the corpus grows -- the TF-IDF side scales with vocabulary,
 the embedding side does not.
 
+### In the container
+
+Measured 2026-08-28, `deploy/docker/compose.yaml` (2 GB / 2 CPU limits,
+artefacts bind-mounted, uid 10001):
+
+| | Measured |
+|---|---|
+| Image, `runtime` target | **941 MB** summed layers — venv 725, base ~175, NLTK 37 |
+| Image, `standalone` target | +108.5 MB of baked artefacts |
+| Cold build (no cache) | 8 min 49 s |
+| Container healthy from `up` | < 25 s |
+| Union retriever cold load | 20-24 s cold page cache, 9 s warm |
+| First query | 3.3 s — the TF-IDF half fits over 10,666 documents |
+| Warm query, union | p50 **86.9 ms**, p95 **103.5 ms** |
+| Warm query, embedding only | p50 2.9 ms, p95 5.1 ms |
+| Peak RSS, union process | **662 MB** against the 2 GB limit |
+| Idle Streamlit server RSS | 55-80 MB |
+
+The container is *faster* than the dev laptop on the union path (103.5 ms p95
+against 128 ms), which is what pinned BLAS threads and a 2-CPU limit buy on a
+4-thread machine that is also running an IDE. Peak RSS is 662 MB against the
+438 MB measured natively -- the container figure is a whole-process peak
+including interpreter and imports, not the steady-state delta.
+
+**The healthcheck proves less than it looks.** `/_stcore/health` returns 200 as
+soon as Streamlit's HTTP server binds, which it does whether or not search
+works: the container reported `healthy` for a build whose every search would
+have raised `PermissionError`. A readiness probe that actually exercises the
+retrieval path -- `medsearch doctor --full` -- would have caught it.
+
 ### Artefact size against the legacy project
 
 | Artefact | Legacy | v1 | |

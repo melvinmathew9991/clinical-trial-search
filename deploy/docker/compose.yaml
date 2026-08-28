@@ -28,6 +28,11 @@ services:
       - ../../models:/home/app/models:ro
       - ../../data/processed:/home/app/data/processed:ro
       - ../../data/raw:/home/app/data/raw:ro
+      # The token cache is the one path the container writes to: the TF-IDF
+      # half of the union preprocesses the corpus on first use, and without a
+      # cache it redoes all 10,666 documents on every cold start. Mounted
+      # read-write, and deliberately not `:ro` like the artefacts above.
+      - ../../data/interim:/home/app/data/interim
     deploy:
       resources:
         limits:

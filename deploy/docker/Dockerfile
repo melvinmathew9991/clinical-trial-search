@@ -30,7 +30,21 @@ RUN python -m venv /opt/venv \
 # startup. Artefacts (models, index) are deliberately NOT baked -- they are
 # fetched from blob storage at runtime, which keeps the image small and lets
 # a retrain roll out without a rebuild.
-RUN /opt/venv/bin/python -m medsearch.runtime --download-nltk
+# The trim that follows keeps English only. punkt ships sentence models for 17
+# languages and omw-1.4 for 30-odd; this pipeline calls word_tokenize on English
+# abstracts and nothing else. nltk also leaves the downloaded .zip beside the
+# tree it unpacked, so that copy is dead weight -- except for wordnet and
+# omw-1.4, which nltk reads *from* the zip and which must stay. ~64 MB.
+#
+# The package directories themselves must survive: ensure_nltk_data() probes
+# with nltk.data.find() and re-downloads anything missing, which inside a
+# container means a network call on the first query.
+RUN /opt/venv/bin/python -m medsearch.runtime --download-nltk \
+    && find /root/nltk_data/tokenizers/punkt -name '*.pickle' ! -name 'english.pickle' -delete \
+    && find /root/nltk_data/tokenizers/punkt_tab -mindepth 1 -maxdepth 1 -type d ! -name english -exec rm -rf {} + \
+    && rm -f /root/nltk_data/tokenizers/punkt.zip \
+             /root/nltk_data/tokenizers/punkt_tab.zip \
+             /root/nltk_data/corpora/stopwords.zip
 
 # ---------------------------------------------------------------- runtime
 FROM python:3.11-slim AS runtime
@@ -63,6 +77,16 @@ COPY --from=builder --chown=app:app /root/nltk_data /home/app/nltk_data
 WORKDIR /home/app
 COPY --chown=app:app src ./src
 COPY --chown=app:app .streamlit ./.streamlit
+
+# Create the artefact directories *before* anything mounts into them. Docker
+# creates a missing mount point as root:root, so `data/` ended up root-owned
+# and uid 10001 could not mkdir `data/interim` inside it -- the union
+# retriever, which is what ships, died with PermissionError on its first
+# query while the healthcheck stayed green. Pre-creating them owned by `app`
+# means a bind mount lands on an existing directory and the ownership holds.
+RUN mkdir -p /home/app/data/raw /home/app/data/interim /home/app/data/processed \
+             /home/app/models \
+    && chown -R app:app /home/app/data /home/app/models
 
 USER app
 

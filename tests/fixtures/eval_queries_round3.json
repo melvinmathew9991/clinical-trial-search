@@ -1,0 +1,440 @@
+{
+  "_about": [
+    "Round 3 of the evaluation set: the cases the original 97 queries cannot see.",
+    "Three strata, deliberately scored SEPARATELY -- they are different retrieval tasks and a",
+    "single mean over them would hide all three. See EVALUATION_AUDIT.md section 8.",
+    "  entity   (11) alphanumeric biomedical identity, built as pairs the pre-audit tokeniser collapsed",
+    "  code      (3) known-item retrieval by registry id; ground truth is objective string containment",
+    "  negation  (8) four positive/negated pairs; the pair, not the query, is the measurement",
+    "Provenance: entity and negation judgements are model-generated under the round-2 protocol",
+    "(topic-area reading, threshold loosened; kappa 0.800 measured against human labels in round 2).",
+    "The code stratum needs no judgement at all and is the only judgement-free data in this project.",
+    "One query was written and dropped: 'MERS-CoV and SARS-CoV-1 comparison' has no relevant document",
+    "in a corpus of COVID-19 trials. It survives in scripts/round3_ablation.py as a discrimination probe."
+  ],
+  "queries": [
+    {
+      "query": "IL-6 inhibitor for cytokine storm",
+      "stratum": "entity",
+      "relevant": [
+        "NCT04306705",
+        "NCT04322773",
+        "NCT04346017",
+        "NCT04424056",
+        "NCT04486521",
+        "NCT04560205",
+        "UMIN000040614"
+      ],
+      "note": "Trial evaluates an IL-6 or IL-6R directed agent (tocilizumab, sarilumab, siltuximab, anti-IL6), or is an IL-6-focused study of COVID hyperinflammation. Agents acting on other cytokines are not relevant however severe the inflammation.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "IL-1 blockade in covid-19",
+      "stratum": "entity",
+      "relevant": [
+        "CTRI/2020/12/030082",
+        "NCT04366232",
+        "NCT04424056",
+        "NCT04443881",
+        "NCT04603742"
+      ],
+      "note": "Trial evaluates IL-1 pathway blockade (anakinra, canakinumab, IL-1Ra) or is an IL-1-focused study. IL-6 agents are the paired contrast and are not relevant.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "CD4 T cell response",
+      "stratum": "entity",
+      "relevant": [
+        "2020-001786-36",
+        "CHICTR2000030012",
+        "CHICTR2000033003",
+        "CHICTR2000034076",
+        "CTRI/2021/02/031096",
+        "DRKS00024422",
+        "NCT04386395",
+        "NCT04402827",
+        "NCT04470323",
+        "NCT04473365",
+        "NCT04526977",
+        "NCT04706143",
+        "NCT04871932"
+      ],
+      "note": "Study measures or characterises T-cell (CD4-inclusive) responses in COVID. CD8-only studies are the paired contrast and are excluded; cell-therapy trials that do not measure response are excluded.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "CD8 T cell response",
+      "stratum": "entity",
+      "relevant": [
+        "2020-001786-36",
+        "CHICTR2000030012",
+        "CHICTR2000033003",
+        "CHICTR2000034076",
+        "NCT04351711",
+        "NCT04386395",
+        "NCT04397900",
+        "NCT04402827",
+        "NCT04546841",
+        "NCT04565067",
+        "NCT04706143",
+        "NCT04852289",
+        "NCT04871932"
+      ],
+      "note": "Study measures or characterises CD8 / cytotoxic T-cell responses, or T-cell responses inclusive of CD8. CD4-only studies excluded.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "SARS-CoV-2 neutralising antibody",
+      "stratum": "entity",
+      "relevant": [
+        "2021-000842-16",
+        "CHICTR2000030012",
+        "CHICTR2100043183",
+        "CHICTR2100045417",
+        "CHICTR2100045810",
+        "CTRI/2020/04/024775",
+        "CTRI/2020/08/027285",
+        "NCT04453384",
+        "NCT04468386",
+        "NCT04469634",
+        "NCT04779996",
+        "NCT04794829",
+        "NCT04808986",
+        "NCT04895007",
+        "NCT04902911",
+        "UMIN000043769"
+      ],
+      "note": "Study measures, induces or administers SARS-CoV-2-specific / neutralising antibodies: serology, antibody kinetics, monoclonals, convalescent plasma. Vaccine trials are excluded unless antibody measurement is the stated endpoint.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "BNT162b2 vaccine trial",
+      "stratum": "entity",
+      "relevant": [
+        "2021-000182-33",
+        "CHICTR2000040044",
+        "DRKS00025271",
+        "ISRCTN55371988",
+        "NCT04368728",
+        "NCT04380701",
+        "NCT04649021",
+        "NCT04743388",
+        "NCT04754594",
+        "NCT04756817",
+        "NCT04816669",
+        "NCT04824638",
+        "NCT04852861",
+        "NCT04887948",
+        "NCT04900467",
+        "NCT04907331"
+      ],
+      "note": "Trial of the Pfizer-BioNTech BNT162b2 / Comirnaty vaccine, including heterologous schedules and co-administration studies that involve it.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "mRNA-1273 vaccine immunogenicity",
+      "stratum": "entity",
+      "relevant": [
+        "2021-001512-28",
+        "NCT04283461",
+        "NCT04405076",
+        "NCT04470427",
+        "NCT04649151",
+        "NCT04785144",
+        "NCT04796896",
+        "NCT04847050",
+        "NCT04852978",
+        "NCT04860297",
+        "NCT04889209",
+        "NCT04894435",
+        "NL9275"
+      ],
+      "note": "Trial of Moderna mRNA-1273 (including mRNA-1273.351 and mRNA-vaccine schedule studies) with immunogenicity endpoints.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "ChAdOx1 nCoV-19 vaccine",
+      "stratum": "entity",
+      "relevant": [
+        "ACTRN12621000532808",
+        "CTRI/2020/08/027170",
+        "CTRI/2021/03/031998",
+        "DRKS00025271",
+        "ISRCTN15638344",
+        "NCT04324606",
+        "NCT04400838",
+        "NCT04444674",
+        "NCT04536051"
+      ],
+      "note": "Trial of ChAdOx1 nCoV-19 / AZD1222 / Vaxzevria / Covishield, including heterologous prime-boost studies that involve it.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "ACE2 receptor expression",
+      "stratum": "entity",
+      "relevant": [
+        "NCT04335136",
+        "NCT04375046",
+        "NCT04382950",
+        "NCT04402827",
+        "NCT04422457",
+        "NCT04542863",
+        "NCT04658433",
+        "NCT04766645"
+      ],
+      "note": "Study concerns ACE2 itself: its expression, imaging, or recombinant/modulated form. ACE-inhibitor and ARB trials are excluded unless ACE2 is named as the object of study -- they are a different entity and including them would blur exactly the distinction this stratum tests.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "D-dimer levels and thrombosis",
+      "stratum": "entity",
+      "relevant": [
+        "2020-002190-10",
+        "CHICTR2000030943",
+        "CHICTR2000038537",
+        "CTRI/2020/07/026800",
+        "CTRI/2021/01/030844",
+        "CTRI/2021/02/030946",
+        "DRKS00021604",
+        "NCT04366752",
+        "NCT04366778",
+        "NCT04373486",
+        "NCT04377490",
+        "NCT04377997",
+        "NCT04380792",
+        "NCT04388657",
+        "NCT04389554",
+        "NCT04410549",
+        "NCT04498273",
+        "NCT04505774",
+        "NCT04507230",
+        "NCT04615026",
+        "NCT04646655",
+        "NCT04827160",
+        "UMIN000042717"
+      ],
+      "note": "Study measures D-dimer, or investigates thrombosis / thromboembolism / coagulopathy including its treatment. Generic biomarker panels that do not name D-dimer or a thrombotic outcome are excluded.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "vitamin D3 supplementation",
+      "stratum": "entity",
+      "relevant": [
+        "CTRI/2021/03/032385",
+        "CTRI/2021/04/032593",
+        "IRCT20110726007117N11",
+        "NCT04335084",
+        "NCT04344041",
+        "NCT04386850",
+        "NCT04407286",
+        "NCT04407572",
+        "NCT04435119",
+        "NCT04459247",
+        "NCT04476745",
+        "NCT04483635",
+        "NCT04489628",
+        "NCT04525820",
+        "NCT04641195",
+        "NCT04793243",
+        "NCT04810949",
+        "NCT04885803"
+      ],
+      "note": "Trial administering or measuring vitamin D / D3 / 25-hydroxyvitamin D3, alone or in a combination arm. Other micronutrient trials (vitamin C, K2) are excluded.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "NCT04446429",
+      "stratum": "code",
+      "relevant": [
+        "NCT04728802",
+        "NCT04853927"
+      ],
+      "note": "Ground truth is exact string containment of the registry code in title+abstract. No judgement, model or human, is involved. None of these codes is a self-reference: each is cited by other trials, so this measures retrieval and not a row lookup.",
+      "judged_by": "exact string match -- objective"
+    },
+    {
+      "query": "NCT04317092",
+      "stratum": "code",
+      "relevant": [
+        "NCT04357730",
+        "NCT04363853",
+        "NCT04903834"
+      ],
+      "note": "Ground truth is exact string containment of the registry code in title+abstract. No judgement, model or human, is involved. None of these codes is a self-reference: each is cited by other trials, so this measures retrieval and not a row lookup.",
+      "judged_by": "exact string match -- objective"
+    },
+    {
+      "query": "NCT04372368",
+      "stratum": "code",
+      "relevant": [
+        "NCT04471051"
+      ],
+      "note": "Ground truth is exact string containment of the registry code in title+abstract. No judgement, model or human, is involved. None of these codes is a self-reference: each is cited by other trials, so this measures retrieval and not a row lookup.",
+      "judged_by": "exact string match -- objective"
+    },
+    {
+      "query": "hospitalized patients with covid-19",
+      "stratum": "negation",
+      "relevant": [
+        "2020-001198-55",
+        "2020-001308-40",
+        "2020-001445-39",
+        "2020-001635-27",
+        "2020-001745-40",
+        "2020-001766-11",
+        "2020-002542-16",
+        "2020-003278-37",
+        "2020-003936-25",
+        "2020-004206-59",
+        "2020-005849-16",
+        "CHICTR2000029542",
+        "CHICTR2000033723",
+        "EUPAS35465",
+        "IRCT20170731035423N2",
+        "NCT04315298",
+        "NCT04322123",
+        "NCT04345692",
+        "NCT04348409",
+        "NCT04423861",
+        "NCT04622865",
+        "NCT04708158",
+        "NCT04793984"
+      ],
+      "note": "POSITIVE CONTROL of a negation pair. Trial or study whose population is hospitalised COVID patients (ward or ICU). All-comer registries and outpatient studies excluded.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "non-hospitalized patients with covid-19",
+      "stratum": "negation",
+      "relevant": [
+        "2020-004695-18",
+        "2021-000890-10",
+        "NCT04344600",
+        "NCT04501952",
+        "NCT04530435",
+        "NCT04621149",
+        "NCT04889040",
+        "NCT04898023"
+      ],
+      "note": "NEGATED TWIN. Population must be outpatient / ambulatory / community, or the endpoint must be preventing hospitalisation. A hospitalised-population trial is NOT relevant however similar its intervention -- that inversion is the whole point of the pair.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "patients requiring supplemental oxygen",
+      "stratum": "negation",
+      "relevant": [
+        "CTRI/2020/06/026198",
+        "CTRI/2020/07/026532",
+        "CTRI/2020/12/029803",
+        "EUPAS34966",
+        "NCT04312100",
+        "NCT04424836",
+        "NCT04427969",
+        "NCT04456452",
+        "NCT04565106",
+        "NCT04649775",
+        "NCT04699942",
+        "NCT04704388",
+        "NL9067"
+      ],
+      "note": "POSITIVE CONTROL. Study of patients receiving or requiring oxygen: oxygen therapy, HFNC, prone positioning for hypoxaemia, ventilatory support, hypoxaemic respiratory failure.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "patients not requiring supplemental oxygen",
+      "stratum": "negation",
+      "relevant": [
+        "CTRI/2021/01/030373",
+        "NCT04704388"
+      ],
+      "note": "NEGATED TWIN. Population must be explicitly free of an oxygen requirement -- community/ambulatory, or a study that separates those who did not receive respiratory support. Oxygen-therapy and hypoxaemia trials are the contrast and are excluded.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "severe covid-19 pneumonia",
+      "stratum": "negation",
+      "relevant": [
+        "2020-001110-38",
+        "2020-001154-22",
+        "2020-001324-33",
+        "2020-001335-28",
+        "2020-001364-29",
+        "2020-001408-41",
+        "2020-001437-12",
+        "2020-001513-20",
+        "2020-001645-40",
+        "2020-001750-22",
+        "2020-002011-21",
+        "2020-002123-11",
+        "2020-003614-13",
+        "2020-005020-11",
+        "2020-005919-51",
+        "CHICTR2000030095",
+        "CHICTR2000031888",
+        "CTRI/2020/08/027246",
+        "DRKS00021238",
+        "NCT04298814",
+        "NCT04336254",
+        "NCT04398303",
+        "NCT04435223",
+        "NCT04880694"
+      ],
+      "note": "POSITIVE CONTROL. Trial or study in severe / critical COVID pneumonia.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "non-severe covid-19 pneumonia",
+      "stratum": "negation",
+      "relevant": [
+        "2020-001654-21",
+        "2020-001928-34",
+        "2020-002208-37",
+        "CTRI/2020/06/025575",
+        "NCT04334005",
+        "NCT04481620",
+        "NCT04757831"
+      ],
+      "note": "NEGATED TWIN. Population must be mild / moderate / non-severe, or the endpoint must be preventing progression to severe disease.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "treatment with mechanical ventilation",
+      "stratum": "negation",
+      "relevant": [
+        "2020-001492-33",
+        "2020-001722-66",
+        "2020-001777-71",
+        "2020-002056-20",
+        "CHICTR2000030485",
+        "CHICTR2000030741",
+        "CHICTR2000031227",
+        "CHICTR2000034784",
+        "EUPAS34490",
+        "NCT04349618",
+        "NCT04350723",
+        "NCT04391140",
+        "NCT04448782",
+        "NCT04477655",
+        "NCT04582214",
+        "NCT04708457",
+        "UMIN000039686"
+      ],
+      "note": "POSITIVE CONTROL. Study involving mechanical or non-invasive ventilation, ventilation management, respiratory support or ECMO.",
+      "judged_by": "model, round-3 protocol"
+    },
+    {
+      "query": "treatment without mechanical ventilation",
+      "stratum": "negation",
+      "relevant": [
+        "2020-001777-71",
+        "2020-005214-18",
+        "NCT04350723",
+        "NCT04391140",
+        "NCT04427969",
+        "NCT04477655"
+      ],
+      "note": "NEGATED TWIN. Population must be non-intubated, or the aim must be to avoid ventilation; non-invasive support counts, invasive ventilation does not.",
+      "judged_by": "model, round-3 protocol"
+    }
+  ]
+}
