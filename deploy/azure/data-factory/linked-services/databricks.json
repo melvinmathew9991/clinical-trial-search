@@ -1,0 +1,26 @@
+{
+  "name": "MedSearchDatabricks",
+  "type": "Microsoft.DataFactory/factories/linkedservices",
+  "properties": {
+    "annotations": [],
+    "type": "AzureDatabricks",
+    "description": "Training compute. Authenticated by the Data Factory system-assigned managed identity; no access token is stored. The legacy file carried the literal placeholders 'id' and 'your credentials', which meant it could never have deployed.",
+    "typeProperties": {
+      "domain": "@{linkedService().workspaceUrl}",
+      "authentication": "MSI",
+      "workspaceResourceId": "@{linkedService().workspaceResourceId}",
+      "newClusterNodeType": "Standard_DS3_v2",
+      "newClusterNumOfWorker": "1",
+      "newClusterVersion": "13.3.x-scala2.12",
+      "newClusterSparkEnvVars": {
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1"
+      }
+    },
+    "parameters": {
+      "workspaceUrl": { "type": "string", "defaultValue": "https://REPLACE_ME.azuredatabricks.net" },
+      "workspaceResourceId": { "type": "string", "defaultValue": "REPLACE_ME" }
+    }
+  }
+}

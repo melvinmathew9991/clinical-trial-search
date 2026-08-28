@@ -1,0 +1,21 @@
+{
+  "name": "on-new-corpus",
+  "properties": {
+    "description": "Fires train-embeddings when a CSV is written to the raw corpus prefix.",
+    "annotations": [],
+    "runtimeState": "Stopped",
+    "pipelines": [
+      {
+        "pipelineReference": { "referenceName": "train-embeddings", "type": "PipelineReference" }
+      }
+    ],
+    "type": "BlobEventsTrigger",
+    "typeProperties": {
+      "blobPathBeginsWith": "/medsearch/blobs/raw/",
+      "blobPathEndsWith": ".csv",
+      "ignoreEmptyBlobs": true,
+      "scope": "REPLACE_WITH_STORAGE_ACCOUNT_RESOURCE_ID",
+      "events": ["Microsoft.Storage.BlobCreated"]
+    }
+  }
+}

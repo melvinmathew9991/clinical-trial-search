@@ -1,0 +1,22 @@
+{
+  "name": "MedSearchBlobStorage",
+  "type": "Microsoft.DataFactory/factories/linkedservices",
+  "properties": {
+    "annotations": [],
+    "type": "AzureBlobFS",
+    "description": "Corpus and artefact storage. Authenticated by the Data Factory managed identity -- there is no sasUri and no key here. The legacy linkedService/AzureBlobStorage1.json embedded a live SAS token with sp=racwdymeop (read/write/delete) directly in a tracked file.",
+    "typeProperties": {
+      "url": "@{linkedService().storageUrl}"
+    },
+    "parameters": {
+      "storageUrl": {
+        "type": "string",
+        "defaultValue": "https://REPLACE_ME.dfs.core.windows.net"
+      }
+    },
+    "connectVia": {
+      "referenceName": "AutoResolveIntegrationRuntime",
+      "type": "IntegrationRuntimeReference"
+    }
+  }
+}
