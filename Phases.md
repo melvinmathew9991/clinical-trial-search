@@ -214,16 +214,23 @@ plan (SIF weighting) · Architecture §9 numbers replaced with measured values.
 **Risk:** ⚠️ targets may not be met with mean pooling — that outcome is a finding, not a failure.
 **Est:** 2 days.
 
-**DoD met — both targets cleared, by the third remediation.** Recall@10 **0.955**
-(target 0.70), MRR@10 **0.852** (target 0.45), p95 128 ms (target 300 ms), via
-union retrieval with FastText. Architecture §9 carries measured values including
-the union's latency cost. Full detail in [PRD §8](./PRD.md); the short version:
+**DoD met — but the margin did not survive the evaluation audit.** On the
+re-judged set (2026-08-28, 1,691 judgements): Recall@10 **0.702** (target 0.70),
+MRR@10 **0.890** (target 0.45), p95 122 ms (target 300 ms), via union retrieval
+with FastText. The figures this sprint originally closed on — Recall@10 0.955 —
+were pool-bound and are withdrawn; see
+[EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md). Architecture §9 carries measured
+values including the union's latency cost. Full detail in [PRD §8](./PRD.md);
+the short version:
 
-- The risk landed. Mean pooling loses to TF-IDF (0.485 vs 0.648, p = 0.0003).
+- The risk landed. Mean pooling loses to the lexical baselines — 0.353 against
+  TF-IDF 0.459 and BM25 0.471 re-judged (0.485 vs 0.648, p = 0.0003 in round 1).
 - SIF weighting (8.4's fallback plan) was built and **made it worse** — killed.
 - Rank fusion was measured **before** being built (+0.0005, p = 0.98) — killed.
-- The union of both top-10 lists was the survivor: 0.955, +0.240 over
-  depth-matched TF-IDF, p < 0.0001. It ships on by default and is switchable.
+- The union of both top-10 lists was the survivor: 0.955 in round 1,
+  **0.702 re-judged** — still above target, but by nDCG@10 it now ranks *below*
+  a 40-line lexical baseline (0.746 against 0.799). It ships on by default and
+  is switchable, and PRD §8.4 reopens that choice.
 - 8.7 decided by measurement: **FastText**, because under the union it beats
   Skip-gram (+0.028, p = 0.019) though as a standalone ranker it does not.
 
@@ -240,7 +247,7 @@ the union's latency cost. Full detail in [PRD §8](./PRD.md); the short version:
 
 ---
 
-## Sprint 9 — Containerisation  ✅ *(written, never built)*
+## Sprint 9 — Containerisation  🟨 *(built and served 2026-08-28; image over its size DoD)*
 
 **Goal:** One reproducible image.
 
@@ -257,6 +264,39 @@ the union's latency cost. Full detail in [PRD §8](./PRD.md); the short version:
 contains no secret and no `data/`.
 **Risk:** ⚠️ build on the dev laptop is disk-heavy — 34.7 GB free on `C:`; prune between builds.
 **Est:** 1 day.
+
+**Built for the first time 2026-08-28 — two of three DoD clauses met.**
+
+| Clause | Result |
+|---|---|
+| `docker run --memory=2g` serves search | ✅ healthy in <25 s; union query returns 16 documents; peak RSS **662 MB** inside the 2 GB limit |
+| No secret, no `data/` in the image | ✅ verified — the four data directories exist and are empty, `models/` is empty, no SAS token or key anywhere in the layers |
+| Image < 800 MB | ❌ **941 MB** (summed layers; `docker images` reports 1.25 GB under the containerd store) |
+
+**Where the 941 MB goes:** the venv is **725 MB** of it — pyarrow 156, scipy
+143, pandas 76, gensim 58, numpy 79, streamlit 35, pydeck 23 — on a ~175 MB
+`python:3.11-slim` base, plus 37 MB of NLTK corpora. Trimming NLTK to English
+already saved 64 MB (100 → 37) in this session. **The remaining 141 MB is not
+reachable by packaging:** pyarrow and pydeck are Streamlit's, scipy is gensim's.
+Getting under 800 MB means changing the UI stack, not the Dockerfile. The
+target was written before anything was built — it needs re-setting against a
+measurement or the clause needs re-scoping.
+
+**One real defect found by building it, invisible to every test:** the union
+retriever — the shipped default — died on its first query with
+`PermissionError: 'data/interim'`. Docker creates an absent bind-mount parent
+as `root:root`, so `/home/app/data` was root-owned and uid 10001 could not
+create the token-cache directory inside it. **The healthcheck stayed green
+throughout**, because `/_stcore/health` proves Streamlit's HTTP server is up
+and nothing more. Fixed by pre-creating the artefact directories owned by `app`
+in the runtime stage, and by mounting `data/interim` read-write in
+`compose.yaml`. Re-verified after the fix.
+
+**The `standalone` target was built and run with no mounts at all** — the
+free-tier path in `deploy/README.md` §6. It serves: healthy, union loads,
+query returns. The baked artefacts measure **108.5 MB** (models 46.9, raw 29.6,
+interim 23.3, processed 8.7), which confirms the "110 MB, measured" figure that
+document already carried.
 
 ---
 
@@ -285,7 +325,7 @@ the JSON and runbook regardless.
 
 ---
 
-## Sprint 11 — Hardening & v1.0  ⬜
+## Sprint 11 — Hardening & v1.0  🟨 *(11.1–11.5 done; `v1.0.0` not tagged)*
 
 | # | Task |
 |---|------|
@@ -299,6 +339,13 @@ the JSON and runbook regardless.
 **DoD:** clean-clone → `make setup && make doctor && make train && make app` succeeds on the
 dev laptop with no manual steps and no unresponsiveness.
 **Est:** 1 day.
+
+**Status 2026-08-28.** 11.1 and 11.2 are done — `doctor --full` and
+`pipelines/integrity.py` came out of this sprint, and found the stale-index
+class. 11.3 and 11.4 are done. 11.5 was done twice: once at the end of the
+sprint, and again on 2026-08-28 after the evaluation audit invalidated the
+numbers the docs quoted. **Outstanding: 11.6 (`v1.0.0`), and the clean-clone
+DoD run itself, which has never been performed.**
 
 ---
 

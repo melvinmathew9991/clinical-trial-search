@@ -10,26 +10,41 @@
 
 | | |
 |---|---|
-| **Version** | `v0.10.0` + Tracks 0, 1 and 2 |
-| **Done** | Sprints 0–7, 9, 10, **11** · Tracks 0, 1, 2 · Sprint 8 harness (labels pending) |
-| **Not done** | SIF/IDF-weighted pooling (the remediation the evaluation points at) · `v1.0.0` tag |
-| **Branch** | `main`, clean tree, 16 commits, 10 tags |
-| **Next action** | **Product decision, not modelling.** Both remediations are measured and dead. The one real lever is returning the 20-document union (recall 0.955 vs 0.648). See the hybrid entry below. |
+| **Version** | `v0.10.0` + Tracks 0, 1, 2 + the domain-audit remediation (unreleased) |
+| **Done** | Sprints 0–7, 9, 10, 11 (bar the tag) · Tracks 0, 1, 2 · Sprint 8 **including two rounds of relevance judging** |
+| **Not done** | `v1.0.0` tag · the clean-clone DoD run · an independent clinician review of the judgements · **Sprint 9's image-size DoD (941 MB against < 800 MB)** · an actual Azure deploy · a search driven through the UI in a browser · free-standing negation (needs a query parser, not a token list) · indexing the `Trial ID` column |
+| **Branch** | `fix/domain-audit-remediation`, clean tree, in sync with `origin`. **16 commits ahead of `main`, which still sits at the Sprint 0 scaffolding commit — nothing has been merged back.** Tags run to `v0.9.0`. |
+| **Next action** | **A product decision — open, and round 3 sharpened it.** Re-judging cut the union's margin to **0.702-vs-0.459**, nDCG@10 puts the lexical baselines *ahead* (0.799 vs 0.746), and on known-item code queries the union **halves P@1** (0.500 vs 1.000) because the embedding half contributes a document that cannot be relevant. Decide whether the 17.8-document union still ships by default. See [EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) §§7–8 and PRD §8.4. |
 | **Note** | Full-corpus training takes 2 min 22 s at ~350 MB peak. Databricks is no longer *required* for it, though still the right home for scheduled retraining. |
+| **Docker** | Installed on the dev machine 2026-08-28. Both image targets build and serve; `deploy/docker/compose.yaml` is the local run. Building it found a defect no test could reach — see the session entry at the end of this file. |
 | **Track 0** | ✅ **COMPLETE** — full-corpus run done 2026-08-27 23:15. Architecture §9 now holds measurements, not estimates. |
 
-### Static gates — all green as of 2026-08-27
+### Static gates — re-run 2026-08-28, all green
 
 ```
-ruff check          All checks passed
-ruff format         40 files already formatted
-mypy --strict       no issues in 26 source files
-import-linter       2 contracts kept, 0 broken
-pytest              326 passed in 11.6s   (fast loop, unit only)
-pytest -m ""        360 passed in 49.8s   (full, incl. integration)
-coverage            92.21%  (gate: 80%)
-pre-commit          14/14 hooks pass
+ruff check src tests      All checks passed
+ruff format --check       55 files already formatted
+mypy --strict             no issues in 32 source files
+import-linter             2 contracts kept, 0 broken
+check_function_length     9 over the soft cap, none over the hard cap
+pytest                    525 passed, 36 deselected in 40.5s   (fast loop, unit only)
+pytest -m ""              561 passed in 68.3s                  (full, incl. integration)
+coverage                  87.62%  (gate: 80%)
+pre-commit                not re-run — last verified 14/14 on 2026-08-27
 ```
+
+**Two things the re-run surfaced, neither of them cosmetic.**
+
+1. **The fast loop now breaches Rules.md §5.** The rule is 30 s; the default
+   `pytest` (coverage on, as `addopts` sets it) takes **40.5 s** for 525 tests,
+   up from 421. Either the budget moves with a stated reason or the suite gets
+   trimmed — it should not simply be left over the line.
+2. **One flaky integration test.**
+   `TestCrossModelGuard::test_index_from_one_model_is_rejected_by_another`
+   failed once in a full run, then passed in isolation, in its module alone,
+   and in two further full runs. Order- or state-dependent, cause not found.
+   Recorded rather than dismissed: an intermittent failure in a *guard* test is
+   the kind that gets waved through until it matters.
 
 **Two test invocations, deliberately.** `pytest` runs unit tests only and stays
 under the 30 s budget in Rules.md §5. The integration module is marked `slow`
@@ -101,17 +116,27 @@ OOV and stopword-only queries degrade gracefully with distinct reasons. No NaN.
 | Serving RSS ≤ 1.2 GB | ✅ verified — **438 MB** for fasttext + union; 342 MB was skipgram alone |
 | PRD G2 query latency p95 < 300 ms | ✅ verified — 3.3 ms embedding-only, **128 ms for the shipped union** |
 | PRD G4 full corpus indexed (10,666/10,666) | ✅ verified, `sampled: false` in metadata |
-| Recall@10 ≥ 0.70 | ✅ **MET — 0.955** via union retrieval. Was ❌ 0.485 for the embeddings alone |
-| Embeddings beat TF-IDF | ❌ **REFUTED** — TF-IDF 0.648 vs 0.485, p=0.0003, survives Bonferroni |
-| FastText beats Skip-gram | ⚠️ **Depends on the budget.** ❌ standalone (p=0.28/0.86/1.00); ✅ under the union (+0.028, p=0.019) — hence the default |
+| Recall@10 ≥ 0.70 | ⚠️ **met at 0.702** on the re-judged set (was 0.955 on the biased pool), and only from a 17.8-document result set. The depth-10 ceiling is 0.626, so no 10-document system can reach the target on this set at all |
+| Embeddings beat TF-IDF | ❌ **REFUTED** — round 1: TF-IDF 0.648 vs 0.485, p=0.0003, survives Bonferroni. Re-judged: 0.459 vs 0.353, same direction and a wider gap; intervals not recomputed |
+| FastText beats Skip-gram | ⚠️ **Depends on the budget.** ❌ standalone (p=0.28/0.86/1.00); ✅ under the union (+0.028, p=0.019, round-1 intervals). Re-judged the union gap is +0.015, same direction, not re-tested — the default stands |
 | SIF weighting closes the gap | ❌ **REFUTED** — no gain for skipgram, significantly worse for fasttext |
 | Rank fusion closes the gap | ❌ **REFUTED** — RRF = +0.0005, p=0.98 |
-| Embeddings find docs TF-IDF misses | ✅ **CONFIRMED** — 66% of their hits are unique; union@20 = 0.955 |
-| MRR@10 ≥ 0.45 | ✅ measured — **0.852** union / 0.757 skipgram / 0.888 TF-IDF |
-| Coverage gate (80%) on the full suite | ✅ verified — **87.47%**, down from 92.21%: Sprint 8 added code faster than tests |
-| 457 tests pass (421 fast + 36 integration) | ✅ verified |
+| Embeddings find docs TF-IDF misses | ✅ **CONFIRMED** — 66% of their hits are unique (an overlap measure, unaffected by pooling). The union@20 figure beside it is now 0.702, not 0.955 |
+| MRR@10 ≥ 0.45 | ✅ measured — re-judged **0.890** union / 0.818 skipgram / 0.952 TF-IDF / 0.909 BM25 |
+| Coverage gate (80%) on the full suite | ✅ verified 2026-08-28 — **87.62%** |
+| 561 tests pass (525 fast + 36 integration) | ✅ verified 2026-08-28 — with the one flake noted above |
+| BM25 beats / loses to TF-IDF | ❌ **neither** — Δ +0.0116, 95% CI [−0.0195, +0.0435], p = 0.47. Equivalent on this corpus. The round-1 21-point gap was pool bias |
+| The union is a better ranker | ❌ **REFUTED by nDCG@10** — BM25 0.799 / TF-IDF 0.797 against union-fasttext 0.746. It is a wider net, not a better ranker |
+| The eval judgements are human ground truth | ⚠️ **no** — 986 human, **705 model-generated** at Cohen's κ = 0.800 against the human labels. No clinician has reviewed any of them |
+| The tokeniser fix improves retrieval | ✅ **CONFIRMED (round 3)** — registry-code Recall@10 0.44 → 1.00 TF-IDF, 0.33 → 1.00 BM25; `CD4` and `CD8` returned an *identical* top-10 under the old chain |
+| The negation fix improves retrieval | ⚠️ **half-refuted (round 3)** — the gain is hyphen-joining (`nonhospitalized`, idf 6.45), not `CLINICAL_KEEP_WORDS`. Free-standing `not` (idf 2.18) is retained but weighted below the words it inverts |
+| The union is safe as the default | ⚠️ **contested (round 3)** — on known-item code queries it halves P@1 against the lexical baselines, 0.500 vs 1.000 |
 | A search performed *through the UI* | ⚠️ app serves (HTTP 200 on `/_stcore/health`, page renders, 11 KB body) and the engine path is tested; **no browser interaction has ever been driven** |
-| Docker image builds | ❌ **never built** — `docker` is not installed on the dev machine, so Sprint 9's DoD cannot be verified here at all |
+| Docker image builds | ✅ **built and served 2026-08-28** — both targets. Cold build 8 m 49 s |
+| Container serves search under `--memory=2g` | ✅ verified — union query returns 16 docs, peak RSS **662 MB**, warm p95 **103.5 ms** |
+| Image < 800 MB (Sprint 9 DoD) | ❌ **941 MB** — 725 MB of it is the venv (pyarrow, scipy, pandas, gensim). Not reachable by packaging; it needs a re-set target or a lighter UI stack |
+| Image carries no secret and no `data/` | ✅ verified in the built layers |
+| `standalone` target serves with no mounts | ✅ verified — the free-tier path works; baked artefacts measure 108.5 MB, confirming the documented 110 MB |
 | Azure pipeline deploys | ❌ **never deployed** — and pre-deployment review found the App Service config mounted no artefacts, so the first deploy would have served zero results |
 
 ### Track 0 — three defects found by actually running it
@@ -132,7 +157,7 @@ Six regression tests added. **43 pass.**
 ### Environment facts (verified 2026-08-27)
 - **Dev machine:** Intel i5-7300HQ · 4 physical / **4 logical cores** · **7.89 GB RAM** (~1.07 GB free at profiling time) · `D:` has 164 GB free, `C:` has 34.7 GB free
 - **Python:** 3.10.11 at the system level
-- **Repo root:** `D:\Word2Vec and FastText Word Embedding with Gensim in Python\clinical-trial-search`
+- **Repo root:** `D:\Word2Vec and FastText Word Embedding with Gensim in Python\medical-embeddings-search` (an earlier entry says `clinical-trial-search`; that name did not stick)
 - **Legacy reference (frozen, do not edit):** `reference/legacy/` — inside the repo since the restructure, so the citations in the docs and `test_regressions.py` actually resolve for anyone who clones. Was `..\Part_1\` and `..\Part_2\`, outside the repo and invisible to everyone but me.
 - Because there are only 4 threads, `workers` is **3** everywhere. Because RAM is 8 GB, artefacts are bounded and the pipeline streams.
 
@@ -1082,3 +1107,280 @@ defensible and wrong either way.
 
 Recall@10 ceiling is now **0.626** (was 0.879) — with 17.4 relevant documents
 per query, ten slots cannot hold them.
+
+---
+
+### 2026-08-28 — Session 3 · Sprint 11.5, second pass: reconciling the docs with the re-judged numbers
+
+**Status: done. No code changed; five documents did.**
+
+Round 2 (the entry above) invalidated figures that four documents still quoted
+as current. The README's own Status section still said *"retrieval quality has
+not been measured"* — written before Sprint 8 and never revised — while the
+README table above it quoted `Recall@10 0.955`, a number the audit had already
+withdrawn. A reader would have taken either as the state of the project.
+
+**Files changed:** `EVALUATION_AUDIT.md`, `README.md`, `PRD.md`, `Phases.md`,
+`Memory.md` (this entry plus the Current state block).
+
+**Decisions, so they are not relitigated:**
+
+1. **Round-1 analysis is kept, not deleted.** Every superseded figure stays
+   where it was written and is labelled round 1 with its pool bias stated. The
+   audit's whole point is that the numbers moved and *why*; a doc that quietly
+   replaced them would erase the evidence for its own finding.
+2. **SIF (§8.2) and RRF (§8.3) were not re-scored on the new judgements.** Both
+   branches are dead. Re-scoring a killed remediation buys nothing, and those
+   comparisons are internally valid anyway — every system in them contributed
+   to the pool they were scored on, which is the exact condition §6 requires.
+   Marked as round-1 rather than recomputed.
+3. **Recall never appears alone any more.** Every table that reports Recall@10
+   now carries nDCG@10, R-precision, or the 0.626 depth-10 ceiling beside it,
+   and the judgements' model-generated provenance travels with them. This is
+   written into the audit as a reporting rule, not left to memory.
+4. **PRD §8.4's "the union ships by default" is explicitly reopened.** It was
+   decided on a 0.955-vs-0.648 margin that turned out to be pool membership. At
+   0.702-vs-0.459 with nDCG pointing the other way, the decision deserves
+   re-making rather than inheriting.
+
+**Measurements — gates re-run through `.venv`, not assumed:**
+
+| Gate | Result |
+|---|---|
+| `ruff check src tests` | All checks passed |
+| `ruff format --check src tests` | 55 files already formatted |
+| `mypy --strict` | no issues in 32 source files |
+| `lint-imports` | 2 contracts kept, 0 broken |
+| `check_function_length.py` | 9 over the soft cap, none over the hard cap |
+| `pytest` (fast) | 525 passed, 36 deselected, **40.5 s** |
+| `pytest -m ""` (full) | 561 passed, 68.3 s |
+| coverage | 87.62 % (gate 80 %) |
+
+*Note: the first gate run was scoped wrong — `ruff check .` over the whole tree
+reports 370 errors because it lints `reference/legacy/`, which is frozen by
+design. The Makefile scopes every gate to `src tests`. Run `make check`, not
+the bare tools.*
+
+**Two findings from the re-run, both recorded in the Current state block:**
+
+1. **The fast suite breaches Rules.md §5** — 40.5 s against a 30 s budget, at
+   525 tests (it was 421 at 13 s). Not fixed here: it is a real decision about
+   whether the budget or the suite moves, and it belongs to whoever picks up
+   Sprint 11.6.
+2. **`TestCrossModelGuard::test_index_from_one_model_is_rejected_by_another`
+   failed once**, then passed in isolation, in its module, and in two further
+   full runs. Order- or state-dependent; cause not found. Left visible rather
+   than re-run until green and forgotten — a flaky *guard* test is the kind
+   that gets waved through until the day it was right.
+
+**Next action:** the product decision — 17.8-document union by default, or
+BM25 alone — then Sprint 11.6 (`v1.0.0`), and a merge of
+`fix/domain-audit-remediation` into `main`, which is still 16 commits behind.
+
+
+---
+
+### 2026-08-28 — Session 4 · Sprint 9 verified for the first time: the image builds, and building it found a bug
+
+**Status: done.** Docker arrived on the dev machine, so the one sprint whose
+DoD had never been checked at all could finally be checked.
+
+**Files changed:** `deploy/docker/Dockerfile`, `deploy/docker/compose.yaml`,
+`Phases.md`, `Architecture.md`, `README.md`, `deploy/README.md`, `Memory.md`.
+
+**The defect, which is the reason this was worth doing.** The image built
+first try and the container came up `healthy`. It was also completely broken:
+the union retriever — the shipped default — raised
+`PermissionError: 'data/interim'` on its first query. Docker creates an absent
+bind-mount parent as `root:root`, so `/home/app/data` was root-owned and uid
+10001 could not create the token-cache directory inside it. The embedding-only
+path worked fine, because it reads a prebuilt index and writes nothing.
+
+Three things about it are worth keeping:
+
+1. **No test could have caught it.** It is not a code defect. It only exists at
+   the intersection of a non-root user, a bind mount, and a directory the
+   application creates lazily.
+2. **The healthcheck was green the whole time.** `/_stcore/health` returns 200
+   when Streamlit's HTTP server binds and proves nothing about retrieval. This
+   is the fourth mismatch class this project has found the hard way, and the
+   first one a *liveness probe* actively concealed. `doctor --full` exists and
+   would have caught it — using it as the readiness probe is an open
+   recommendation, not yet made.
+3. **It would have shipped.** The App Service config mounts artefacts the same
+   way. The first real deploy would have served a green healthcheck and an
+   exception on every search.
+
+**The fix:** pre-create `data/{raw,interim,processed}` and `models/` owned by
+`app` in the runtime stage, so a bind mount lands on an existing directory and
+the ownership holds; and mount `data/interim` read-write in compose, since the
+token cache is the one path the container writes. Re-verified after the change.
+
+**Measurements — all first-time:**
+
+| | Measured |
+|---|---|
+| Cold build, `runtime` target | 8 min 49 s |
+| Rebuild after the fix (wheels cached) | 40 s |
+| `standalone` target on top | 18 s |
+| Image, `runtime` | **941 MB** summed layers (`docker images` says 1.25 GB under the containerd store) |
+| Image, `standalone` | +108.5 MB baked artefacts — models 46.9, raw 29.6, interim 23.3, processed 8.7 |
+| Container healthy from `up` | < 25 s |
+| Union cold load | 20–24 s cold, 9 s warm page cache |
+| First query | 3.3 s (TF-IDF fits over 10,666 docs) |
+| Warm union query | p50 **86.9 ms**, p95 **103.5 ms** — *faster than the 128 ms measured natively* |
+| Warm embedding-only query | p50 2.9 ms, p95 5.1 ms |
+| Peak RSS, union | **662 MB** against a 2 GB limit |
+| Idle Streamlit RSS | 55–80 MB |
+
+**Image size: the DoD is not met and cannot be met by packaging.** 941 MB
+against `< 800 MB`. The venv is 725 MB of it — pyarrow 156, scipy 143, pandas
+76, numpy 79, gensim 58, streamlit 35, pydeck 23 — on a ~175 MB slim base.
+Trimming NLTK to English-only saved 64 MB (100 → 37 MB) and is kept; dropping
+pip and setuptools would save 24 MB more and was **not** done, because the risk
+of a runtime `pkg_resources` import is a poor trade for 24 MB when the target
+is 141 MB away. pyarrow and pydeck are Streamlit's dependencies and scipy is
+gensim's. **Under 800 MB means a different UI stack, not a better Dockerfile.**
+The target was written before anything was built; it needs re-setting against
+this measurement, and that is a decision for the user, not a doc edit to make
+quietly.
+
+**Also verified:** non-root uid 10001; the image contains no secret and no
+artefacts (the four data directories exist and are empty); the `standalone`
+target serves with no mounts at all, which is the free-tier path in
+`deploy/README.md` §6, and confirms that document's "110 MB, measured" claim.
+
+**Next action:** unchanged — the union-vs-BM25 product decision, then `v1.0.0`.
+Added by this session: decide what the image-size target should be, and whether
+the readiness probe should move from `/_stcore/health` to `doctor --full`.
+
+
+---
+
+### 2026-08-28 — Session 5 · Round 3: the blind spot closed, and the negation fix half-refuted
+
+**Status: done.** The last open *measurement* question from the audit is answered.
+
+`EVALUATION_AUDIT.md` §5 said the eval set could not see the two preprocessing
+fixes, and round 2 could not help — a pool holds no candidates for a query
+nobody asked. So 22 queries were written in three strata and scored separately:
+`entity` (11), `code` (3), `negation` (8). Full analysis in §8 of the audit.
+
+**Files added:** `tests/fixtures/eval_queries_round3.txt` (the query source,
+with the design reasoning inline), `tests/fixtures/eval_queries_round3.json`
+(the labelled fixture), `scripts/round3_probe.py`, `scripts/round3_ablation.py`,
+`scripts/round3_evaluate.py`, `reports/round3_probe.json`,
+`reports/round3_ablation.json`, `reports/evaluation_round3.json`,
+`reports/eval_round3_candidates.json`, `reports/eval_round3_labels.json`.
+**Changed:** `scripts/make_eval_candidates.py` (BM25 now contributes to the
+pool — it is scored, so it must contribute, which is §6's whole lesson),
+`EVALUATION_AUDIT.md`, `README.md`, `Memory.md`.
+
+**Design decisions worth keeping:**
+
+1. **Two of the three strata need no relevance judgements.** A document is
+   relevant to `NCT04446429` iff its text contains that string; and for the
+   negation pairs the measurement is the *overlap between a query and its
+   negated twin*, which is a property of the rankings, not of relevance. In a
+   project where 42 % of judgements are model-generated and every table has to
+   say so, designing the measurement to need no labels is worth more than
+   another few hundred labels would have been.
+2. **Collapse pairs, not "queries with digits".** `CD4`/`CD8`, `IL-6`/`IL-1`,
+   `SARS-CoV-2`/`MERS-CoV` — pairs the old chain maps to one token. A generic
+   digit-bearing query would have measured almost nothing; the pair makes the
+   defect visible directly.
+3. **Strata are never averaged.** Known-item search with 2 relevant documents
+   and ad-hoc search with 13 are different tasks; one mean over them describes
+   neither. `scripts/round3_evaluate.py` slices and delegates to the shipped
+   evaluator, so the numbers stay comparable with `reports/evaluation.json`.
+4. **No p-values at n = 11 / 3 / 8.** These strata are diagnostic. The main set
+   was sized to 97 by a power calculation for exactly this reason, and the
+   effects reported are the ones readable at this n (1.00 vs 0.00).
+
+**Results:**
+
+- **Tokeniser fix: confirmed, large.** Registry-code Recall@10 0.44 → 1.00
+  (TF-IDF) and 0.33 → 1.00 (BM25). `CD4 T cell response` and `CD8 T cell
+  response` returned the *identical* ten documents under the old chain
+  (overlap 1.00 → 0.50). Vocabulary 39,879 → 55,487.
+- **Negation fix: half-refuted, and this is the finding I did not expect.**
+  The gain comes from intra-word hyphen joining, not from `CLINICAL_KEEP_WORDS`.
+  `non-hospitalized` → `nonhospitalized` is a rare token (idf **6.45** against
+  `hospitalized` 3.14) and it moves the ranking hard. Free-standing negation
+  does not: `not` has idf **2.18**, *below* the content words it inverts, so
+  retaining it changes nothing measurable (overlap 1.00 → 0.90). And `without`
+  was never an NLTK stopword, so the pair that turns on it is byte-identical
+  under both chains. **No term-weighting scheme fixes this** — it needs the
+  query parser to treat negation as an operator.
+- **The embeddings lose by more on exactly the queries they should.** Entity
+  stratum P@1: BM25/TF-IDF 0.909, FastText 0.636. An entity query turns on one
+  rare alphanumeric token, which is what mean pooling destroys.
+- **The union damages known-item retrieval.** Code stratum P@1: lexical 1.000,
+  union-fasttext 0.500 — the embedding half contributes a document that cannot
+  be relevant (FastText scores 0.000 on every metric there). A direct input to
+  the pending PRD §8.4 decision.
+- **A capability gap, found by accident:** only 71 of 10,666 abstracts contain
+  any registry code, because ids live in the `Trial ID` column while retrieval
+  runs on `abstract`. The tokeniser docstring's flagship example
+  (`NCT04508933` → `nct`) is true about tokenisation and nearly irrelevant to
+  retrieval here. Searching by trial id needs the id column indexed.
+
+**One query was written and dropped:** `MERS-CoV and SARS-CoV-1 comparison` has
+no relevant document in a COVID-19 trial corpus. Recorded rather than quietly
+deleted — it is a fact about corpus scope, and it still serves as a
+discrimination probe in the ablation, which needs no labels.
+
+**Next action:** unchanged and now better informed — the union-vs-lexical
+product decision, then `v1.0.0`.
+
+---
+
+### 2026-08-28 — Session 5b · The bigram fix for negation: tried, measured, rejected
+
+**Status: done — a negative result, and worth the twenty minutes.**
+
+Result 2 of the audit suggested its own remedy and I recommended it: if prefix
+negation works because hyphen-joining mints a rare token, bigrams should do the
+same for free-standing negation. `not requiring` has idf 6.00, `without
+mechanical` 7.97 — the same band as `nonhospitalized` at 6.45. I said so to the
+user before testing it, which was the mistake; the measurement came second.
+
+**It does not work.** `scripts/round3_bigram_experiment.py`, feature change
+only, rankers untouched, metrics from `evaluate_baseline` unchanged:
+
+| nDCG@10 | unigram | bigram |
+|---|---|---|
+| negation stratum, TF-IDF | **0.528** | 0.377 |
+| entity stratum, TF-IDF | **0.742** | 0.663 |
+| main 97-query set, TF-IDF | **0.797** | 0.720 |
+| main 97-query set, BM25 | **0.799** | 0.608 |
+
+Negation overlap barely moved (`not requiring` 0.90 → 0.80; `without
+mechanical` unchanged), one prefix pair got worse, vocabulary went 55,487 →
+887,024 and p95 latency roughly tripled. Nothing to salvage.
+
+**The reason corrects my own theory, which is why this is worth recording.**
+Rare-token idf was never the whole mechanism. Split each pair into features
+shared with its positive twin and features unique to the negated query:
+
+| Negated query | shared idf mass | unique idf mass |
+|---|---|---|
+| `not requiring supplemental oxygen` (bigrams) | **25.3** | 12.7 |
+| `non-hospitalized patients with covid-19` | 5.6 | **13.8** |
+
+Bigrams give the negated query `not requiring` (6.0) — and give *both* queries
+`requiring supplemental` (6.5) and `supplemental oxygen` (5.2). Shared evidence
+grows faster than unique evidence, so the pair gets *more* similar. Prefix
+negation escapes this only because morphology **substitutes**: `hospitalized`
+is replaced by `nonhospitalized`, removing the shared term rather than adding
+beside it.
+
+**The generalisation, and it is the durable lesson here:** negation requires
+*removing or inverting shared evidence*. Every additive feature scheme — a
+stopword allowlist, bigrams, trigrams, reweighting — can only add evidence, so
+none of them can express negation. The audit's original recommendation (a query
+operator that subtracts) stands, and my proposed revision of it was wrong.
+
+**Process note:** the cost of being wrong here was one script and twenty
+minutes, because the harness to measure it already existed from round 3. That
+is the argument for building the measurement before the fix, not after.

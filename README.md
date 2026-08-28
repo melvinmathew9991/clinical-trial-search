@@ -7,11 +7,14 @@ Search `lung failure` and get back trials whose abstracts say *"acute
 respiratory distress syndrome"* — records a keyword search would miss entirely.
 
 > **Measured caveat:** that paraphrase capability is real and demonstrable, but
-> a plain TF-IDF baseline still **outperforms** both embedding models on their
-> own (Recall@10 0.648 vs 0.485, p = 0.0003 over 97 queries). What ships is
-> therefore neither one alone but the **union** of both — the two methods miss
-> different trials, and returning everything either finds reaches Recall@10
-> **0.955**. See [Retrieval quality](#retrieval-quality--the-keyword-baseline-wins).
+> plain keyword baselines still **outperform** both embedding models on their
+> own (TF-IDF 0.459 and BM25 0.471 against FastText 0.353 Recall@10, over 97
+> queries). What ships is therefore neither one alone but the **union** of
+> embeddings and TF-IDF — the two methods miss different trials, and returning
+> everything either finds lifts Recall@10 to **0.702** from a 20-document
+> budget. By nDCG@10 the plain baselines still rank better (0.799 against
+> 0.746): the union is a wider net, not a better ranker. See
+> [Retrieval quality](#retrieval-quality--the-keyword-baseline-wins).
 
 ---
 
@@ -66,7 +69,7 @@ can never be mistaken for a production run.
 
 ```bash
 medsearch doctor --full                  # preflight + artefact integrity checks
-medsearch evaluate                       # Recall@k, MRR vs the TF-IDF baseline
+medsearch evaluate                       # Recall/nDCG/MRR vs TF-IDF and BM25
 medsearch preprocess --field abstract    # clean and cache tokens
 medsearch train --model fasttext         # train one model
 medsearch index build --model all        # embed the corpus, write the index
@@ -113,32 +116,48 @@ they are also what an AI coding assistant should load first.
 
 ## Retrieval quality — the keyword baseline wins
 
-Measured over **97 labelled queries / 986 relevance judgements**:
+Measured over **97 labelled queries / 1,691 relevance judgements** — the
+round-2, re-judged set described in the banner above:
 
-| Method | Docs shown | Recall@10 | MRR@10 | Precision@1 |
-|--------|-----------|-----------|--------|-------------|
-| **Union: FastText + TF-IDF** *(ships)* | 17.7 | **0.955** | 0.852 | 0.753 |
-| Union: Skip-gram + TF-IDF | 17.5 | 0.927 | 0.822 | 0.737 |
-| TF-IDF baseline | 10.0 | 0.648 | **0.888** | **0.835** |
-| FastText | 10.0 | 0.485 | 0.761 | 0.670 |
-| Skip-gram | 10.0 | 0.469 | 0.757 | 0.670 |
+| Method | Docs shown | Recall@10 | nDCG@10 | R-prec | MRR@10 | Precision@1 |
+|--------|-----------|-----------|---------|--------|--------|-------------|
+| **Union: FastText + TF-IDF** *(ships)* | 17.8 | **0.702** | 0.746 | **0.616** | 0.890 | 0.830 |
+| Union: Skip-gram + TF-IDF | 17.6 | 0.687 | 0.733 | 0.607 | 0.892 | 0.804 |
+| BM25 baseline | 10.0 | 0.471 | **0.799** | 0.458 | 0.909 | 0.856 |
+| TF-IDF baseline | 10.0 | 0.459 | 0.797 | 0.449 | **0.952** | **0.918** |
+| FastText | 10.0 | 0.353 | 0.662 | 0.351 | 0.818 | 0.732 |
+| Skip-gram | 10.0 | 0.351 | 0.655 | 0.346 | 0.818 | 0.742 |
+
+**Read Recall against the ceiling.** With 17.4 relevant documents per query,
+the attainable Recall@10 is **0.626** at depth 10 and 0.951 at depth 20 — ten
+slots cannot hold seventeen documents. BM25's 0.471 is 75 % of what is
+reachable at its budget.
 
 The union is scored to depth 20 because that is the budget it occupies; the
 single rankers are scored to depth 10. "Docs shown" is what makes the rows
 comparable — the union buys its recall with roughly twice the result list, and
-**pays for it at the top**: TF-IDF alone still has the best Precision@1 (0.835
-vs 0.753) and MRR@10 (0.888 vs 0.852). Recall is the metric that matters for a
+**pays for it in ranking quality**: TF-IDF alone still has the best
+Precision@1 (0.918 vs 0.830) and MRR@10 (0.952 vs 0.890), and both lexical
+baselines beat the union on nDCG@10 (0.799 / 0.797 vs 0.746), the one metric
+here that is not capped by the ceiling. Recall is the metric that matters for a
 researcher who must not miss a relevant trial, so the union ships; a user who
-wants the tightest possible list can turn it off.
+wants the tightest, best-ranked list can turn it off.
 
-Among the single rankers, TF-IDF wins outright:
+**BM25 and TF-IDF are equivalent on this corpus** (Δ +0.0116, 95 % CI
+[−0.0195, +0.0435], p = 0.47). An earlier 21-point gap in TF-IDF's favour was
+an artefact of TF-IDF having helped build the judgement pool while BM25 had
+not; it did not survive re-judging.
+
+Among the depth-10 rankers, the lexical baselines win outright:
 
 **The project's central premise does not hold as built.** A 40-line TF-IDF
 baseline beats both in-domain embedding models on every metric. All gaps are
 statistically significant and survive Bonferroni correction across the three
 metrics (Recall@10: Δ −0.163, 95% CI [−0.249, −0.078], p = 0.0003, paired over
 97 queries with 20k bootstrap resamples). TF-IDF wins 56 queries, the
-embeddings 28, 13 ties.
+embeddings 28, 13 ties. *Those intervals were computed on the round-1
+judgements and have not been recomputed since; the direction survives
+re-judging — 0.459 against 0.353 — and the gap widens rather than closes.*
 
 Skip-gram and FastText are **statistically indistinguishable** from each other
 (p = 0.28 / 0.86 / 1.00), so the character n-grams buy nothing measurable here.
@@ -171,15 +190,20 @@ a difference of +0.0005 (p = 0.98). Fusing deeper lists is significantly
 *worse*.
 
 **But the complementarity is real.** 326 of the 496 relevant documents the
-embeddings retrieve — **66%** — are ones TF-IDF never returns, and the union of
-both top-10 lists reaches **0.955** recall against depth-matched TF-IDF's 0.715
-(+0.240, p < 0.0001). At a fixed budget of ten results a fusion must drop a
-reliable TF-IDF hit to admit an embedding hit, so the gain is real and
-unusable at once.
+embeddings retrieve — **66%** — are ones TF-IDF never returns. That is an
+overlap measurement and re-judging does not touch it. The recall figures beside
+it in round 1 (0.955 for the union against depth-matched TF-IDF's 0.715) were
+pool-bound and are withdrawn; on the re-judged set the union reaches **0.702**
+at depth 20 against TF-IDF's 0.459 at depth 10. At a fixed budget of ten
+results a fusion must drop a reliable TF-IDF hit to admit an embedding hit, so
+the gain is real and unusable at once.
 
 **The lever is the result budget, not the model.** Returning the 20-document
-union clears the 0.70 target at 0.955, with no new modelling — a product
-decision about how many trials to show. See [PRD §8.3](./PRD.md).
+union reaches **0.702**, just clearing the 0.70 target, with no new modelling —
+a product decision about how many trials to show. What the re-judged set adds
+is the cost: by nDCG@10 that same union ranks *below* a 40-line lexical
+baseline (0.746 against 0.799). The budget buys coverage, not ranking quality.
+See [PRD §8.3](./PRD.md).
 
 **Tuning does not rescue the embeddings either.** A one-factor-at-a-time sweep
 over `vector_size`, `window`, `min_count`, and `epochs` on the full corpus moves
@@ -189,8 +213,11 @@ training is not seed-deterministic), so the two largest effects are under 3× th
 noise and the defaults stay put. See `reports/sweep.json`.
 
 **FastText is the default model** because under the union it beats Skip-gram on
-recall (0.955 vs 0.927, p = 0.019) and is no worse on ranking (p = 0.16) — a
-difference that does not exist between them as standalone rankers.
+recall (0.955 vs 0.927, p = 0.019, round-1 judgements) and is no worse on
+ranking (p = 0.16) — a difference that does not exist between them as
+standalone rankers. On the re-judged set the gap is 0.702 against 0.687: same
+direction, not re-tested for significance, and nothing in it argues for
+switching the default.
 
 Reproduce with `medsearch evaluate`; it exits non-zero while the target is
 missed, so it can gate a release. `python scripts/sweep.py` and
@@ -300,15 +327,49 @@ over a 20-row fixture (~40 s) and is where the 80% coverage gate is enforced.
 The pipeline runs end to end on the full corpus and every resource target is
 met with wide margin. Numbers above are measured, not estimated.
 
-**Not yet done:** retrieval quality has not been measured. Sprint 8's harness
-is built — metrics, TF-IDF baseline, and a pooled candidate generator — but it
-needs a human-labelled evaluation set, which is deliberately not machine
-generated (see [Architecture.md §3.1](./Architecture.md)). Run
-`python scripts/make_eval_candidates.py`, label the sheet, then
-`medsearch evaluate`.
+**Retrieval quality is measured — twice.** 97 queries and 1,691 relevance
+judgements, after a second judging round that added the candidates the first
+pool had missed. Two conclusions from round 1 did not survive it: the
+TF-IDF-over-BM25 win was pool bias, and the union's recall margin shrank from
+0.955 to 0.702. The full account is in
+[EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md).
 
-**Also unverified:** the container image has never been built (no Docker on the
-development machine) and the Azure pipeline has never been deployed.
+**Provenance of the judgements:** 986 are human, **705 are model-generated**,
+calibrated at Cohen's κ = 0.800 against the human labels. That is a defensible
+stand-in for a second annotator and *not* for a clinician — no independent
+domain review has been done.
+
+**That blind spot is now closed.** A third round added 22 queries in three
+strata — alphanumeric entity identity, known-item registry codes, and negation
+pairs — in `tests/fixtures/eval_queries_round3.json`, scored separately by
+`python scripts/round3_evaluate.py`. The headline results: the tokeniser fix is
+**confirmed with a large effect** (registry-code Recall@10 0.44 → 1.00; `CD4`
+and `CD8` returned an identical top-10 before it), while the negation allowlist
+is **doing much less than intended** — the gain comes from hyphen-joining, and
+free-standing `not` is retained but carries less weight than the words it
+inverts. Full analysis in [EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) §8.
+
+**The `code` stratum needs no relevance judgements at all** — a document is
+relevant to `NCT04446429` iff its text contains that string — which makes it
+the only evaluation data here with no judgement provenance to caveat.
+
+**The container is built and serving** as of 2026-08-28. Both targets run under
+`docker run --memory=2g`: the mounted `runtime` image and the `standalone` one
+that bakes artefacts for the Azure free tier. Warm union query p95 inside the
+container is **103.5 ms**, peak RSS **662 MB**. Building it surfaced a defect no
+test could reach — the shipped union path died on `PermissionError` for the
+token-cache directory while the healthcheck stayed green. Fixed and re-verified.
+The image is **941 MB** against a < 800 MB target, which Sprint 9's DoD now
+fails on; the breakdown is in [Phases.md](./Phases.md).
+
+**Still unverified:** the Azure pipeline has never been deployed, and no search
+has ever been driven through the UI in a browser — the app serves, the engine
+path is tested, and the same union code has now been exercised inside the
+container, but the browser interaction itself is not.
+
+**Gates, re-run 2026-08-28:** ruff, ruff-format, `mypy --strict` (32 files),
+import-linter (2 contracts) all clean; **561 tests pass**, coverage **87.6 %**
+against an 80 % gate.
 
 Current state and the next action are tracked in [Memory.md](./Memory.md).
 
