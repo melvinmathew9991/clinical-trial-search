@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Mirror the local resource rules so CI behaves like the dev machine.
+  OMP_NUM_THREADS: 1
+  MKL_NUM_THREADS: 1
+  OPENBLAS_NUM_THREADS: 1
+  NUMEXPR_NUM_THREADS: 1
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,app]"
+
+      - name: Lint (ruff)
+        run: |
+          ruff check src tests
+          ruff format --check src tests
+
+      - name: Type check (mypy --strict)
+        run: mypy
+
+      - name: Enforce layer contract (import-linter)
+        run: lint-imports
+
+      - name: Test
+        run: pytest
+
+      - name: Upload coverage
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: .coverage
+          if-no-files-found: ignore
+
+  guard-artefacts:
+    # The whole point of gitignoring data/ and models/ is defeated the moment
+    # someone force-adds an 800 MB .npy. This catches it at PR time.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject committed model or data artefacts
+        run: |
+          set -euo pipefail
+          matches=$(git ls-files | grep -E '\.(bin|npy|kv|pkl|pickle|model)$' || true)
+          if [ -n "$matches" ]; then
+            echo "::error::Binary artefacts must not be committed (see .gitignore):"
+            echo "$matches"
+            exit 1
+          fi
+          echo "No committed artefacts."
+
+      - name: Reject large files
+        run: |
+          set -euo pipefail
+          large=$(git ls-files -z | xargs -0 -I{} sh -c 'test -f "{}" && [ $(stat -c%s "{}") -gt 5242880 ] && echo "{}"' || true)
+          if [ -n "$large" ]; then
+            echo "::error::Files over 5 MB found:"
+            echo "$large"
+            exit 1
+          fi
+          echo "No oversized files."
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for credentials
+        run: |
+          set +e
+          # The legacy Part_2 committed live Azure SAS tokens with
+          # read/write/delete rights. This pattern set catches that class.
+          patterns='sig=[A-Za-z0-9%+/]{20,}|sp=r[acwdlmeop]{2,}&|AccountKey=|BEGIN (RSA|OPENSSH|PRIVATE) KEY|DefaultEndpointsProtocol=.*AccountKey'
+          hits=$(grep -rInE "$patterns" --include='*.py' --include='*.json' --include='*.yml' --include='*.yaml' --include='*.toml' --include='*.md' . | grep -v '\.github/workflows/ci.yml')
+          if [ -n "$hits" ]; then
+            echo "::error::Possible credential committed:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "No credentials detected."
