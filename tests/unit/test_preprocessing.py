@@ -39,8 +39,19 @@ class TestTransform:
     def test_empty_input_gives_empty_output(self, preprocessor: TextPreprocessor) -> None:
         assert preprocessor.transform("") == []
 
-    def test_digits_only_gives_empty_output(self, preprocessor: TextPreprocessor) -> None:
-        assert preprocessor.transform("12345 678") == []
+    def test_multi_digit_numbers_survive(self, preprocessor: TextPreprocessor) -> None:
+        """Digits are no longer stripped -- biomedical identity depends on them.
+
+        Bare numerals are kept here and pruned downstream by ``min_count``
+        during training, rather than destroyed at tokenisation where they take
+        ``cd4`` and ``nct04508933`` with them.
+        """
+        assert preprocessor.transform("12345 678") == ["12345", "678"]
+
+    def test_single_digits_are_dropped_by_min_token_length(
+        self, preprocessor: TextPreprocessor
+    ) -> None:
+        assert preprocessor.transform("a 5 b") == []
 
     def test_is_pure(self, preprocessor: TextPreprocessor) -> None:
         text = "Severe respiratory failure"
@@ -55,11 +66,26 @@ class TestTransform:
         text = "Acute respiratory distress syndrome"
         assert preprocessor.transform(text) == preprocessor.transform(text)
 
-    def test_keep_words_overrides_stopword_removal(self) -> None:
+    def test_negation_is_kept_by_default(self) -> None:
+        """PRD F-12. "no evidence of X" must not tokenise like "evidence of X".
+
+        The allowlist hook existed from Sprint 3 but was never given a default,
+        so "no" and "not" were dropped as ordinary stopwords while "without"
+        and "never" survived -- negation handled half the time.
+        """
         default = TextPreprocessor()
-        keeping = TextPreprocessor(keep_words=["not", "no"])
-        assert "not" not in default.transform("not improved")
-        assert "not" in keeping.transform("not improved")
+        assert "no" in default.transform("no evidence of thrombosis")
+        assert default.transform("no evidence of thrombosis") != default.transform(
+            "evidence of thrombosis"
+        )
+
+    def test_explicit_empty_allowlist_restores_plain_english(self) -> None:
+        plain = TextPreprocessor(keep_words=())
+        assert "no" not in plain.transform("no evidence of thrombosis")
+
+    def test_keep_words_accepts_a_custom_list(self) -> None:
+        keeping = TextPreprocessor(keep_words=["should"])
+        assert "should" in keeping.transform("should improve")
 
     def test_invalid_min_token_length_rejected(self) -> None:
         with pytest.raises(ConfigurationError, match="min_token_length"):

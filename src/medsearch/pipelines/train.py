@@ -228,6 +228,7 @@ def build_index(
             model_kind=model,
             field=field,
             corpus_fingerprint=fingerprint,
+            model_vectors_checksum=metadata.vectors_checksum,
             pooling=mode,
             principal_component=component,
         )
@@ -260,6 +261,7 @@ def load_search_engine(
     index = DocumentIndex.load(
         paths.index_path(model, field, mode),
         expected_fingerprint=metadata.fingerprint,
+        expected_vectors_checksum=metadata.vectors_checksum,
     )
     weights = SifWeights.load(model_dir) if index.pooling == "sif" else None
 

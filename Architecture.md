@@ -405,6 +405,42 @@ this section previously carried.
 
 Vocabulary: 24,897 words. Out-of-vocabulary documents: **2 of 10,666 (0.02%)**.
 
+### Reproducibility
+
+Measured on the reference machine, cold from an empty `models/` and
+`data/{interim,processed}/`, at **default settings with no memory override**:
+
+| Step | Wall time |
+|---|---|
+| `medsearch train --model all` (incl. cold preprocess) | 121 s |
+| `medsearch index build` x2 | 18 s |
+| `medsearch evaluate` | 28 s |
+| **Total, bare corpus to scored results** | **167 s** |
+
+**What reproduces exactly, and what does not.** TF-IDF is deterministic: two
+cold runs returned Recall@10 0.615 to the digit. Gensim is *not* deterministic
+above one worker, so the embedding metrics move by up to +/-0.010 between runs
+at the default `workers=3`.
+
+Setting `MEDSEARCH_WORKERS=1` makes training **bit-identical** -- verified by
+comparing the raw vector matrices of two runs with `np.array_equal`, not by
+comparing file checksums, which differ regardless because gensim's `.kv`
+serialisation is not byte-stable.
+
+    MEDSEARCH_WORKERS=1 medsearch train --model all --force
+
+The cost is 279 s against 150 s, roughly **1.9x**. Use it when a number has to
+be defended; use the default when iterating.
+
+**Provenance covers the artefact, not just the configuration.** Every model
+records `vectors_checksum`, a SHA-256 over the vector matrix, and every index
+stamps the checksum of the model it was built from. `model_fingerprint` alone
+hashes (kind, corpus, hyperparameters) and is therefore *identical* across two
+runs of one config -- so before this was added, retraining without rebuilding
+the index left `doctor --full` reporting "every artefact is consistent" while
+the stored rows scored cosine 0.96 against the live model. That now fails
+loudly at load time and in `doctor --full`.
+
 ### Against the stated budget
 
 | Target | Budget | Measured | |

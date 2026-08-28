@@ -63,11 +63,52 @@ class IntegrityIssue:
         return f"  {self.severity.value:<5} [{self.code}] {self.message}"
 
 
+def _check_vectors_checksum(
+    label: str, index: DocumentIndex, model_vectors_checksum: str
+) -> list[IntegrityIssue]:
+    """Compare the *artefact* the index was built from, not just its config.
+
+    ``model_fingerprint`` hashes (kind, corpus, hyperparameters). Two training
+    runs of one configuration share it while holding different vectors, since
+    gensim is not deterministic above one worker. An index built from the
+    earlier run therefore passed the fingerprint check and was reported
+    consistent while its rows scored cosine 0.96 against the live model.
+
+    Returns:
+        One ERROR when the checksums disagree, one WARN when the index predates
+        the field and cannot be verified, otherwise empty.
+    """
+    if not model_vectors_checksum:
+        return []
+    if not index.model_vectors_checksum:
+        return [
+            IntegrityIssue(
+                Severity.WARN,
+                "index-predates-checksum",
+                f"{label}: index predates the vector checksum and cannot be "
+                f"verified against the installed model. Run: medsearch index build",
+            )
+        ]
+    if index.model_vectors_checksum != model_vectors_checksum:
+        return [
+            IntegrityIssue(
+                Severity.ERROR,
+                "index-model-vectors-stale",
+                f"{label}: index was built from model vectors "
+                f"{index.model_vectors_checksum}, but the installed model holds "
+                f"{model_vectors_checksum}. The model was retrained without "
+                f"rebuilding the index. Run: medsearch index build",
+            )
+        ]
+    return []
+
+
 def _check_index(
     settings: Settings,
     model: ModelName,
     field: FieldName,
     model_fingerprint: str,
+    model_vectors_checksum: str,
     live_corpus_fingerprint: str,
     corpus_rows: int,
 ) -> list[IntegrityIssue]:
@@ -92,6 +133,8 @@ def _check_index(
                     f"Rebuild: medsearch index build --model {model}",
                 )
             )
+
+        issues.extend(_check_vectors_checksum(label, index, model_vectors_checksum))
 
         expected_corpus = (
             f"{live_corpus_fingerprint}-n{index.sampled_limit}"
@@ -228,7 +271,13 @@ def check_artefacts(settings: Settings) -> list[IntegrityIssue]:
         for field in ALL_FIELDS:
             issues.extend(
                 _check_index(
-                    settings, model, field, metadata.fingerprint, live_fingerprint, corpus_rows
+                    settings,
+                    model,
+                    field,
+                    metadata.fingerprint,
+                    metadata.vectors_checksum,
+                    live_fingerprint,
+                    corpus_rows,
                 )
             )
 

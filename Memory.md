@@ -942,3 +942,143 @@ is what they cost. Code that has not run is not "done"; it is a hypothesis.
   identity role assignments in `deploy/README.md` section 3.
 - **No browser has ever driven the UI.** The app serves and the engine path is
   tested; the widget layer is not.
+
+### Domain audit — the evaluation could not measure what it claimed
+
+Audited the eval set itself rather than the systems scored against it. Two
+defects in the pipeline, and one in the measurement that subsumes both.
+
+**The measurement is pool-bound, and I proved it.** Relevance was labelled over
+a pool built from the three systems being scored, so a document no system
+retrieved could not be relevant *by construction*. With the original tokeniser,
+**986 of 986** relevant documents sat inside that pool — 100%, zero outside —
+and the shipped union's 0.955 sat right at the 94.3% its own two members
+contributed.
+
+Then the tokeniser fix changed what gets retrieved, and re-measuring gave the
+proof:
+
+| Configuration | pool membership | measured Recall@10 |
+|---|---|---|
+| old tokeniser | 94.3% | 0.955 |
+| new tokeniser | 85.3% | 0.862 |
+
+**Every method dropped, TF-IDF included (0.648 → 0.615)** — and the embedding
+changes cannot touch TF-IDF. Recall tracks pool membership, not quality. *The
+metric can only measure agreement with the pipeline that built it.* The
+`Recall@10 0.955` headline is withdrawn; PRD §8's DoD was declared met on it.
+
+**The tokeniser was destroying clinical identity.** `strip_digits` removed every
+digit, on the stated rationale that "the numbers carry no distributional signal
+for retrieval" — true of prose, false of biomedicine. `CD4` and `CD8` both
+became `cd`. `ACE2` became `ace`. **Every `NCT…` registry ID became `nct`.**
+6,077 such tokens in 4,000 abstracts. Vocabulary 24,897 → **31,189** after the
+fix.
+
+**Negation was half-handled.** `no`/`not` dropped as stopwords while
+`without`/`never`/`none`/`absent` survived, so "no evidence of thrombosis"
+tokenised identically to "evidence of thrombosis". PRD F-12 predicted this and
+`TextPreprocessor` had carried an unwired `keep_words` hook since Sprint 3.
+
+**Why neither was ever caught: the eval set is blind to both.** Of 97 queries,
+**0 contain a digit** and 1 contains a negation — which uses "without", the
+word that survived. Every query is a natural-language phrase, exactly the case
+the old tokeniser handled well.
+
+**Worth remembering:** a drop in a metric is not evidence of a regression until
+you know what the metric is bound to. My first instinct on seeing 0.955 → 0.862
+was that the fix had hurt retrieval. It hadn't — the labels had gone stale, and
+TF-IDF dropping was the tell, because nothing I changed could affect it. *Check
+whether the control moved.*
+
+**Also added:** nDCG@10, R-precision and the achievable-recall ceiling (0.879,
+because 44 of 97 queries hold more than 10 relevant documents, so Recall@10
+could never reach 1.0). `scripts/make_eval_round2.py` does incremental pooling
+and has emitted **1,073 unjudged candidates across 95 of 97 queries** — until
+those are judged every recall figure is a lower bound.
+
+### Reproducibility, and a hole in the provenance guard
+
+Cold rebuild from an empty artefact tree, **default settings, no memory
+override**: 121 s train + 18 s index + 28 s evaluate = **167 s** end to end.
+The pipeline reproduces.
+
+**What is deterministic and what is not, measured rather than assumed.**
+TF-IDF returned Recall@10 0.615 to the digit across two cold runs. The
+embeddings moved +/-0.010 at the default `workers=3`. With
+`MEDSEARCH_WORKERS=1` the vector matrices are **bit-identical**
+(`np.array_equal`, not a file checksum -- gensim's `.kv` serialisation is not
+byte-stable, so md5 differs even when the vectors do not). Cost: 279 s against
+150 s, 1.9x.
+
+**The bigger find: the integrity guard could not see a retrain.**
+`model_fingerprint` hashes (kind, corpus, hyperparameters) -- *not* the
+vectors. Two runs of one config share it, and gensim above one worker gives
+different vectors. So an index built from run 1 paired "validly" with run 2:
+fingerprints matched, `doctor --full` printed *"every artefact is consistent
+with its model and the live corpus"*, and the stored rows scored **cosine 0.96**
+against the live model instead of 1.00.
+
+That is the legacy K1/K2 failure exactly -- wrong pairing, no signal -- in the
+guard built to prevent it. Fixed with `vectors_checksum`, a hash of the matrix
+itself, stamped into the model metadata and the index manifest and verified at
+load and in `doctor --full`. Both now fail loudly and name the two checksums.
+
+**A second defect fell out of fixing the first.** `registry.py` rebuilt
+`ModelMetadata` field by field to fill in `artefact_bytes` -- twelve fields
+copied by hand. It silently dropped the thirteenth, so every model shipped with
+an empty checksum and the new guard was inert until I noticed. Replaced with
+`dataclasses.replace`, which cannot drift from the dataclass. *A manual copy of
+every field is a bug waiting for the next field.*
+
+**How I found it:** by accident, checking whether `workers=1` was
+deterministic. The retrains left the index stale, `doctor --full` said
+everything was fine, and that claim was checkable — so I checked it.
+
+### Round 2 — the pool was re-judged, and two conclusions reversed
+
+Judged all **1,532** outstanding candidates. Eval set 986 → **1,691**
+judgements over the same 97 queries; mean relevant per query 10.2 → 17.4.
+
+**Calibrated first, because a model judging its own evaluation is the exact
+circularity this audit exists to document.** Blind, balanced 60-item sample
+against the existing human labels: **90.0% agreement, Cohen's κ = 0.800**,
+precision 96.2% / recall 83.3%. Human-vs-human in TREC-style judging is
+typically κ 0.5–0.7, so this is usable — as a second annotator, *not* as a
+clinician. The measured bias was strictness: every miss was a case where the
+human read the query as a topic area and I read it as a specification. I
+loosened the threshold before starting.
+
+*Caught my own transcription error during calibration:* the first score came
+out κ = 0.633 with eleven disagreements, five of which looked wrong on
+inspection — #43 was a thrombosis registry for "blood clots and anticoagulation",
+obviously relevant, and I had judged it so. Two blocks of answers were
+mis-keyed. Corrected: κ = 0.800, six genuine disagreements. **A disagreement
+that looks wrong usually is; check the harness before the judgement.**
+
+**Reversal 1 — BM25 vs TF-IDF flips completely.**
+
+| | biased pool | re-judged |
+|---|---|---|
+| TF-IDF | **0.615** | 0.459 |
+| BM25 | 0.403 | **0.471** |
+
+Nothing about either system changed. The 21-point deficit was *entirely*
+TF-IDF having helped build the pool. And the corrected gap is **+0.0116,
+p = 0.47 — not significant.** The truthful statement is that the two lexical
+baselines are equivalent on this corpus; neither the original claim nor its
+reversal survives.
+
+**Reversal 2 — nDCG says the union is a wider net, not a better ranker.**
+By nDCG@10, which is not ceiling-capped, BM25 **0.799** and TF-IDF **0.797**
+beat union-fasttext's **0.746**. The union wins Recall@10 (0.702 vs 0.471) only
+by returning 1.8x as many documents, and wins R-precision because that metric
+is evaluated at depth |relevant| ≈ 17, which happens to match its result size.
+
+**Worth remembering:** when three metrics disagree, that disagreement *is* the
+finding. Recall@10 alone made the union look dominant; nDCG alone would make it
+look worse than a 40-line baseline. Reporting one of them would have been
+defensible and wrong either way.
+
+Recall@10 ceiling is now **0.626** (was 0.879) — with 17.4 relevant documents
+per query, ten slots cannot hold them.

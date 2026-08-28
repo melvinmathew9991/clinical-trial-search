@@ -40,6 +40,12 @@ class WordVectors(Protocol):
     #: Vocabulary in index order.
     index_to_key: list[str]
 
+    #: The vector matrix itself, ``(vocabulary, vector_size) float32``.
+    #: Declared because provenance needs to checksum the artefact, not just
+    #: the configuration that produced it -- two runs of one config hold
+    #: different vectors whenever gensim uses more than one worker.
+    vectors: FloatArray
+
     def __contains__(self, key: str) -> bool:
         """True when a vector can be produced for ``key``.
 

@@ -101,6 +101,16 @@ they are also what an AI coding assistant should load first.
 | [Phases.md](./Phases.md) | Sprint plan and definitions of done |
 | [Memory.md](./Memory.md) | Running progress log — **read this first in a new session** |
 
+> ⚠️ **These numbers were superseded by a re-judged evaluation set.** The
+> original pool was built from the systems being scored, so `Recall@10 0.955`
+> measured pool membership, not retrieval quality. All 1,532 outstanding
+> candidates have since been judged (986 → 1,691 judgements). On the corrected
+> set: **BM25 0.471, TF-IDF 0.459 — statistically indistinguishable (p = 0.47)**,
+> and by nDCG@10 the lexical baselines *beat* the union (0.799 vs 0.746). The
+> judgements are model-generated, calibrated at **Cohen's κ = 0.800** against
+> the original human labels. Full analysis:
+> **[EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md)**.
+
 ## Retrieval quality — the keyword baseline wins
 
 Measured over **97 labelled queries / 986 relevance judgements**:

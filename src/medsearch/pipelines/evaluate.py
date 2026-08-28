@@ -13,6 +13,7 @@ heuristic that would quietly favour one method over the other.
 from __future__ import annotations
 
 import json
+import math
 import statistics
 import time
 from collections.abc import Sequence
@@ -67,6 +68,20 @@ class MethodResult:
     recall_at: dict[int, float]
     mrr_at: dict[int, float]
     precision_at: dict[int, float]
+    #: nDCG@k. The metric the IR literature would use here and the one this
+    #: harness lacked: unlike Recall@k it is not capped by |relevant| > k, and
+    #: unlike MRR it rewards every relevant document rather than only the
+    #: first. Binary gains, log2 discount, ideal ranking as the denominator.
+    ndcg_at: dict[int, float]
+    #: R-precision: precision at |relevant|, per query. Self-normalising --
+    #: a query with 19 relevant documents is scored at depth 19, a query with
+    #: 3 at depth 3 -- so it sidesteps the ceiling problem entirely.
+    r_precision: float
+    #: Mean of min(k, |relevant|) / |relevant|: the best Recall@k any system
+    #: could score on this eval set. 44 of 97 queries hold more than 10
+    #: relevant documents, so Recall@10 cannot reach 1.0 and must be read
+    #: against this number rather than against perfection.
+    recall_ceiling_at: dict[int, float]
     latency_ms: dict[str, float]
     unanswered: int
     #: Mean documents actually returned per query. A union retriever asked for
@@ -79,7 +94,7 @@ class MethodResult:
     def as_json(self) -> dict[str, Any]:
         """JSON-serialisable form with string keys."""
         payload = asdict(self)
-        for key in ("recall_at", "mrr_at", "precision_at"):
+        for key in ("recall_at", "mrr_at", "precision_at", "ndcg_at", "recall_ceiling_at"):
             payload[key] = {str(k): round(v, 4) for k, v in payload[key].items()}
         payload["latency_ms"] = {k: round(v, 3) for k, v in payload["latency_ms"].items()}
         return payload
@@ -90,6 +105,7 @@ class MethodResult:
             f"  {self.method:<22} "
             f"R@10 {self.recall_at.get(10, 0.0):.3f}  "
             f"MRR@10 {self.mrr_at.get(10, 0.0):.3f}  "
+            f"nDCG@10 {self.ndcg_at.get(10, 0.0):.3f}  "
             f"p95 {self.latency_ms.get('p95', 0.0):>7.2f} ms  "
             f"docs {self.results_shown:>4.1f}"
         )
@@ -104,6 +120,9 @@ class _Accumulator:
     precision_at: dict[int, list[float]] = field(default_factory=dict)
     latencies: list[float] = field(default_factory=list)
     returned: list[int] = field(default_factory=list)
+    ndcg_at: dict[int, list[float]] = field(default_factory=dict)
+    ceiling_at: dict[int, list[float]] = field(default_factory=dict)
+    r_precision: list[float] = field(default_factory=list)
     unanswered: int = 0
 
 
@@ -194,6 +213,26 @@ def _update(
                 break
         accumulator.reciprocal_at.setdefault(k, []).append(reciprocal)
 
+        # nDCG@k with binary gains. The ideal ranking puts every relevant
+        # document first, so the denominator is the discounted sum over
+        # min(|relevant|, budget) positions -- which is what stops a query
+        # with more relevant documents than slots from being scored as a
+        # failure the way Recall@k does.
+        budget = k * depth_factor
+        dcg = sum(1.0 / math.log2(i + 1) for i, doc in enumerate(top_k, 1) if doc in relevant)
+        ideal = sum(1.0 / math.log2(i + 1) for i in range(1, min(len(relevant), budget) + 1))
+        accumulator.ndcg_at.setdefault(k, []).append(dcg / ideal if ideal else 0.0)
+
+        # The best Recall@k anyone could score on this query.
+        accumulator.ceiling_at.setdefault(k, []).append(min(budget, len(relevant)) / len(relevant))
+
+    # R-precision: precision at depth |relevant|. Independent of k, so it is
+    # computed once rather than per k.
+    cut = retrieved[: len(relevant)]
+    accumulator.r_precision.append(
+        sum(1 for doc in cut if doc in relevant) / len(relevant) if relevant else 0.0
+    )
+
 
 def _finalise(
     name: str, accumulator: _Accumulator, count: int, depth_factor: int = 1
@@ -212,6 +251,11 @@ def _finalise(
         recall_at={k: statistics.mean(v) for k, v in sorted(accumulator.hits_at.items())},
         mrr_at={k: statistics.mean(v) for k, v in sorted(accumulator.reciprocal_at.items())},
         precision_at={k: statistics.mean(v) for k, v in sorted(accumulator.precision_at.items())},
+        ndcg_at={k: statistics.mean(v) for k, v in sorted(accumulator.ndcg_at.items())},
+        r_precision=(statistics.mean(accumulator.r_precision) if accumulator.r_precision else 0.0),
+        recall_ceiling_at={
+            k: statistics.mean(v) for k, v in sorted(accumulator.ceiling_at.items())
+        },
         latency_ms={
             "p50": percentile(0.50),
             "p95": percentile(0.95),
@@ -291,6 +335,47 @@ def evaluate_baseline(
     return _finalise(name, accumulator, len(queries))
 
 
+def _evaluate_lexical_baselines(
+    settings: Settings,
+    queries: Sequence[EvalQuery],
+    field: FieldName,
+    k_values: Sequence[int],
+) -> list[MethodResult]:
+    """Score the two keyword baselines against the shared token cache.
+
+    BM25 is the standard lexical baseline and the one a new method should be
+    compared against. TF-IDF is retained alongside it because Sprint 8's
+    published conclusion was measured against TF-IDF, and dropping it would
+    quietly rewrite that history rather than extend it.
+
+    Both read the *same* cache as the embedding path, so a difference between
+    them is the ranking function and not the tokeniser.
+    """
+    from medsearch.data.loader import load_corpus
+    from medsearch.pipelines.train import run_preprocessing
+    from medsearch.preprocessing.pipeline import TextPreprocessor
+    from medsearch.search.baseline import TfidfBaseline
+    from medsearch.search.bm25 import BM25Baseline
+
+    corpus = load_corpus(settings.paths.corpus_file)
+    trial_ids = corpus["trial_id"].astype(str).tolist()
+    cache, _, _ = run_preprocessing(settings, field)
+    preprocessor = TextPreprocessor()
+
+    scored: list[MethodResult] = []
+    for name, baseline in (
+        ("bm25-baseline", BM25Baseline(cache)),
+        ("tfidf-baseline", TfidfBaseline(cache)),
+    ):
+        with stage(f"evaluate[{name}]", logger):
+            scored.append(
+                evaluate_baseline(
+                    baseline, queries, preprocessor, trial_ids, name=name, k_values=k_values
+                )
+            )
+    return scored
+
+
 def run_evaluation(
     settings: Settings,
     *,
@@ -307,10 +392,7 @@ def run_evaluation(
     Returns:
         The report payload, also written to ``reports/evaluation.json``.
     """
-    from medsearch.data.loader import load_corpus
-    from medsearch.pipelines.train import load_search_engine, run_preprocessing
-    from medsearch.preprocessing.pipeline import TextPreprocessor
-    from medsearch.search.baseline import TfidfBaseline
+    from medsearch.pipelines.train import load_search_engine
 
     queries = load_eval_set(eval_path)
     results: list[MethodResult] = []
@@ -337,20 +419,7 @@ def run_evaluation(
                 )
 
     if include_baseline:
-        with stage("evaluate[tfidf-baseline]", logger):
-            corpus = load_corpus(settings.paths.corpus_file)
-            trial_ids = corpus["trial_id"].astype(str).tolist()
-            cache, _, _ = run_preprocessing(settings, field)
-            baseline = TfidfBaseline(cache)
-            results.append(
-                evaluate_baseline(
-                    baseline,
-                    queries,
-                    TextPreprocessor(),
-                    trial_ids,
-                    k_values=k_values,
-                )
-            )
+        results.extend(_evaluate_lexical_baselines(settings, queries, field, k_values))
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),

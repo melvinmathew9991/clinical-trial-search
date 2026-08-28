@@ -87,11 +87,11 @@ class ArtefactMismatchError(ModelError):
     36 and 41).
     """
 
-    def __init__(self, expected: str, actual: str) -> None:
+    def __init__(self, expected: str, actual: str, subject: str = "fingerprint") -> None:
         super().__init__(
-            f"Index/model fingerprint mismatch.\n"
-            f"  Index was built from model fingerprint: {actual}\n"
-            f"  Currently loaded model fingerprint:     {expected}\n"
+            f"Index/model {subject} mismatch.\n"
+            f"  Index was built from: {actual}\n"
+            f"  Model now loaded:     {expected}\n"
             f"  Fix: rebuild the index with `medsearch index build`."
         )
         self.expected = expected
