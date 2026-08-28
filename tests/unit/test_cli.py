@@ -104,6 +104,32 @@ class TestDoctor:
         finally:
             get_settings.cache_clear()
 
+    def test_missing_corpus_points_at_a_source_that_exists(
+        self, tmp_path: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The remediation has to work on a fresh clone.
+
+        `doctor` used to say "Run `make data`". That migrates a local legacy
+        Part_1 tree -- a layout which exists only on the machine this project
+        grew up on -- so on any clean clone it is a dead end. The clean-clone
+        run on 2026-08-29 followed the instruction and found nothing.
+
+        CorpusNotFoundError already said the opposite (see test_exceptions),
+        so the two surfaces contradicted each other. Both now name the
+        download, and both take it from one constant.
+        """
+        monkeypatch.setenv("MEDSEARCH_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("MEDSEARCH_MIN_FREE_MEMORY_GB", "0.0")
+        from medsearch.config import get_settings
+
+        get_settings.cache_clear()
+        try:
+            result = runner.invoke(app, ["doctor"])
+            assert "dimensions.figshare.com" in result.output
+            assert "Run `make data`" not in result.output
+        finally:
+            get_settings.cache_clear()
+
     def test_impossible_memory_floor_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MEDSEARCH_MIN_FREE_MEMORY_GB", "9999")
         from medsearch.config import get_settings
