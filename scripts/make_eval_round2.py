@@ -58,6 +58,7 @@ from medsearch.pipelines.evaluate import load_eval_set
 from medsearch.pipelines.train import load_search_engine, run_preprocessing
 from medsearch.preprocessing.pipeline import TextPreprocessor
 from medsearch.search.baseline import TfidfBaseline
+from medsearch.search.bm25 import BM25Baseline
 
 logger = get_logger("medsearch.eval_round2")
 
@@ -80,6 +81,11 @@ def main() -> int:
     by_id = {str(row.trial_id): row for row in corpus.itertuples() if hasattr(row, "trial_id")}
     cache, _, _ = run_preprocessing(settings, cast(Any, FIELD))
     baseline = TfidfBaseline(cache)
+    # BM25 contributes to the pool from round 2 onward. It was never in round 1,
+    # and it shows: 63.2% of its top-10 is unjudged against TF-IDF's 41.2%,
+    # purely because TF-IDF helped define the ground truth and BM25 did not.
+    # Scoring a system against a pool it never entered measures the pool.
+    bm25 = BM25Baseline(cache)
     pre = TextPreprocessor()
     engines = {
         name: load_search_engine(settings, cast(Any, name), cast(Any, FIELD))
@@ -94,10 +100,9 @@ def main() -> int:
         found: dict[str, list[str]] = {}
         for name, engine in engines.items():
             found[name] = [r.trial_id for r in engine.search(item.query, top_n=args.top_n).results]
-        found["tfidf"] = [
-            trial_ids[h.row_id]
-            for h in baseline.search(pre.transform(item.query), top_n=args.top_n)
-        ]
+        tokens = pre.transform(item.query)
+        found["tfidf"] = [trial_ids[h.row_id] for h in baseline.search(tokens, top_n=args.top_n)]
+        found["bm25"] = [trial_ids[h.row_id] for h in bm25.search(tokens, top_n=args.top_n)]
 
         sources: dict[str, list[str]] = {}
         for name, ids in found.items():

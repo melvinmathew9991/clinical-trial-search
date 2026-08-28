@@ -108,13 +108,49 @@ tokeniser handled well. **The evaluation could not have detected either defect.*
 
 ---
 
+## 6. BM25 was missing, and adding it exposed the bias again
+
+Sprint 8's conclusion — *"a 40-line TF-IDF baseline beats both embedding
+models"* — was measured against the **weak** lexical baseline. TF-IDF with
+cosine similarity is the 1970s formulation; **BM25 has been the standard since
+TREC-3 (1994)** and is what any IR reviewer expects a new method to be compared
+against. It was absent from the project entirely.
+
+Adding it produced a result that looks wrong and is instead diagnostic:
+
+| System | In the round-1 pool? | Recall@10 | Top-10 never judged |
+|---|---|---|---|
+| TF-IDF | **yes** | 0.615 | **41.2 %** |
+| BM25 | **no** | 0.403 | **63.2 %** |
+| Skip-gram | yes* | 0.422 | 55.1 % |
+| FastText | yes* | 0.410 | 56.2 % |
+
+<sub>*pooled in round 1, but the tokeniser fix has since changed what they retrieve.</sub>
+
+**BM25's 0.403 is not comparable to TF-IDF's 0.615.** Nearly two thirds of what
+BM25 returns has never been looked at by a human, and every unjudged document
+scores as wrong. The 22-point gap in unjudged rate is exactly the advantage of
+having helped define the ground truth.
+
+This is the same defect as §1, in its most direct form: **the eval set now
+penalises any new method in proportion to how much it differs from the systems
+that built the pool.** It does not merely fail to measure improvement — it
+actively opposes it.
+
+BM25 is now a pooled contributor for round 2, which raised the candidate count
+from 1,073 to **1,532 across all 97 queries**.
+
 ## What holds up
 
 Most of the methodology is better than typical, and the audit did not disturb it:
 
-- **The relative comparison is sound.** Symmetric pooling, paired bootstrap over
-  20k resamples, Bonferroni across three metrics. *"The keyword baseline beats
-  the embeddings"* survives.
+- **The relative comparison is sound *between pooled systems*.** Symmetric
+  pooling, paired bootstrap over 20k resamples, Bonferroni across three
+  metrics. *"The keyword baseline beats the embeddings"* survives — Skip-gram,
+  FastText and TF-IDF all contributed to the pool, so none had an unfair
+  advantage over the others. §6 is what happens when a system that did *not*
+  contribute is scored on the same set: the comparison stops being symmetric,
+  and stops being valid.
 - **The complementarity finding is sound** — an overlap measurement, valid
   within the pool.
 - **The power calculation** that resized n=30 → 97 before trusting the result is
@@ -133,8 +169,8 @@ an **absolute** claim.
 | The two methods are complementary (66 % unique) | ✅ holds |
 | Union Recall@10 = 0.955 | ❌ **withdrawn** — `recall@pool`, and pool-bound |
 | PRD §8 DoD (Recall@10 ≥ 0.70) met | ⚠️ **unvalidated** pending re-judgement |
-| Tokeniser fix improves retrieval | ⚠️ **unproven** — correct on domain first
-  principles, but this eval set cannot test it |
+| Tokeniser fix improves retrieval | ⚠️ **unproven** — correct on domain first principles, but this eval set cannot test it |
+| BM25 vs TF-IDF (0.403 vs 0.615) | ❌ **not a valid comparison** — BM25 never entered the pool; 63.2 % of its results are unjudged |
 
 ## What is required to close it
 
@@ -142,7 +178,8 @@ an **absolute** claim.
 admits a new system to an existing collection. Old judgements stay valid; new
 candidates get judged and added. It has already emitted the sheet:
 
-- **1,073 unjudged candidates** across **95 of 97 queries**
+- **1,532 unjudged candidates** across **all 97 queries** (1,073 before BM25
+  joined the pool)
 - All currently scored as *not relevant*, so every Recall figure in
   `reports/evaluation.json` is a **lower bound**
 
