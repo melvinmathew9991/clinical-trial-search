@@ -247,3 +247,116 @@ class TestSampledIndexIsDeclared:
     def test_a_hex_fingerprint_is_not_mistaken_for_a_limit(self) -> None:
         # 'n' followed by non-digits must not parse as a sample marker.
         assert self._index("deadbeefncafe").sampled_limit is None
+
+
+class TestStaleIndexAfterRetrain:
+    """A retrain with identical hyperparameters must invalidate its index.
+
+    Found during the pre-deployment domain audit. ``fingerprint`` hashes
+    (kind, corpus, hyperparameters) -- not the vectors -- so two training runs
+    of the same configuration share a fingerprint. gensim is not deterministic
+    above one worker, so those two runs hold *different* vectors. An index
+    built from the first therefore paired "validly" with the second: the
+    fingerprint matched, ``doctor --full`` reported every artefact consistent,
+    and the stored rows scored cosine 0.96 against the live model rather than
+    1.00.
+
+    That is the legacy K1/K2 failure exactly -- wrong pairing, no signal --
+    which the fingerprint was introduced to prevent. These pin the fix.
+    """
+
+    def test_checksum_differs_for_different_vectors(self) -> None:
+        from medsearch.embeddings.base import vectors_checksum
+
+        first = np.arange(12, dtype=np.float32).reshape(3, 4)
+        second = first.copy()
+        second[0, 0] += 0.001
+        assert vectors_checksum(first) != vectors_checksum(second)
+
+    def test_checksum_is_stable_for_identical_vectors(self) -> None:
+        from medsearch.embeddings.base import vectors_checksum
+
+        matrix = np.arange(12, dtype=np.float32).reshape(3, 4)
+        assert vectors_checksum(matrix) == vectors_checksum(matrix.copy())
+
+    def test_checksum_distinguishes_shape(self) -> None:
+        """Same bytes, different interpretation, must not collide."""
+        from medsearch.embeddings.base import vectors_checksum
+
+        flat = np.arange(12, dtype=np.float32)
+        assert vectors_checksum(flat.reshape(3, 4)) != vectors_checksum(flat.reshape(4, 3))
+
+    def test_retrained_model_is_rejected_by_its_old_index(self, tmp_path: Path) -> None:
+        """The scenario that slipped through: same fingerprint, new vectors."""
+        from medsearch.exceptions import ArtefactMismatchError
+        from medsearch.search.index import DocumentIndex
+
+        index = DocumentIndex(
+            vectors=np.eye(3, dtype=np.float32),
+            row_ids=np.arange(3, dtype=np.int64),
+            model_fingerprint="same-config",
+            model_kind="skipgram",
+            field="abstract",
+            corpus_fingerprint="corpus",
+            model_vectors_checksum="vectors-from-run-1",
+        )
+        index.save(tmp_path / "idx")
+
+        with pytest.raises(ArtefactMismatchError):
+            DocumentIndex.load(
+                tmp_path / "idx",
+                expected_fingerprint="same-config",  # unchanged -- this is the point
+                expected_vectors_checksum="vectors-from-run-2",
+            )
+
+    def test_matching_checksum_loads(self, tmp_path: Path) -> None:
+        from medsearch.search.index import DocumentIndex
+
+        index = DocumentIndex(
+            vectors=np.eye(3, dtype=np.float32),
+            row_ids=np.arange(3, dtype=np.int64),
+            model_fingerprint="same-config",
+            model_kind="skipgram",
+            field="abstract",
+            corpus_fingerprint="corpus",
+            model_vectors_checksum="vectors-from-run-1",
+        )
+        index.save(tmp_path / "idx")
+        loaded = DocumentIndex.load(
+            tmp_path / "idx",
+            expected_fingerprint="same-config",
+            expected_vectors_checksum="vectors-from-run-1",
+        )
+        assert loaded.size == 3
+
+    def test_legacy_index_without_a_checksum_warns_but_loads(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Indexes written before the field existed must stay loadable."""
+        import json
+        import logging
+
+        from medsearch.search.index import DocumentIndex
+
+        index = DocumentIndex(
+            vectors=np.eye(3, dtype=np.float32),
+            row_ids=np.arange(3, dtype=np.int64),
+            model_fingerprint="same-config",
+            model_kind="skipgram",
+            field="abstract",
+            corpus_fingerprint="corpus",
+        )
+        index.save(tmp_path / "idx")
+        manifest_file = tmp_path / "idx" / "manifest.json"
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        del manifest["model_vectors_checksum"]
+        manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING):
+            loaded = DocumentIndex.load(
+                tmp_path / "idx",
+                expected_fingerprint="same-config",
+                expected_vectors_checksum="anything",
+            )
+        assert loaded.size == 3
+        assert "rebuild" in caplog.text.lower()

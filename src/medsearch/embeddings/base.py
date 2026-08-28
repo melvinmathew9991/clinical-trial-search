@@ -87,6 +87,28 @@ class TrainingParams:
         return common
 
 
+def vectors_checksum(vectors: Any) -> str:
+    """SHA-256 over a vector matrix's raw bytes, shape and dtype.
+
+    Shape and dtype are folded in so two arrays cannot collide by holding the
+    same bytes under a different interpretation.
+
+    Args:
+        vectors: A NumPy array of model vectors.
+
+    Returns:
+        First 16 hex characters -- enough to make an accidental collision
+        implausible while keeping the manifest readable.
+    """
+    import hashlib
+
+    digest = hashlib.sha256()
+    digest.update(str(vectors.shape).encode())
+    digest.update(str(vectors.dtype).encode())
+    digest.update(memoryview(vectors.tobytes()))
+    return digest.hexdigest()[:16]
+
+
 @dataclass(frozen=True, slots=True)
 class ModelMetadata:
     """Provenance sidecar written next to every trained artefact.
@@ -105,6 +127,21 @@ class ModelMetadata:
     gensim_version: str
     artefact_bytes: int
     training_seconds: float
+    #: SHA-256 of the trained vectors themselves, not of the configuration
+    #: that produced them.
+    #:
+    #: ``fingerprint`` hashes (kind, corpus, hyperparameters) and is therefore
+    #: identical across two training runs of the same config -- but gensim is
+    #: not deterministic above one worker, so those two runs hold *different*
+    #: vectors. An index built from the first paired "validly" with the second:
+    #: fingerprints matched, the integrity check passed, and the stored rows
+    #: were measurably wrong (cosine 0.96 against the live model, found during
+    #: the domain audit). This closes that hole -- the same failure class the
+    #: fingerprint was introduced for, one level down.
+    #:
+    #: Optional so indexes written before this field remain loadable.
+    vectors_checksum: str = ""
+
     trained_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds")
     )

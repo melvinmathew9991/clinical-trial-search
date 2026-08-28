@@ -996,3 +996,41 @@ because 44 of 97 queries hold more than 10 relevant documents, so Recall@10
 could never reach 1.0). `scripts/make_eval_round2.py` does incremental pooling
 and has emitted **1,073 unjudged candidates across 95 of 97 queries** — until
 those are judged every recall figure is a lower bound.
+
+### Reproducibility, and a hole in the provenance guard
+
+Cold rebuild from an empty artefact tree, **default settings, no memory
+override**: 121 s train + 18 s index + 28 s evaluate = **167 s** end to end.
+The pipeline reproduces.
+
+**What is deterministic and what is not, measured rather than assumed.**
+TF-IDF returned Recall@10 0.615 to the digit across two cold runs. The
+embeddings moved +/-0.010 at the default `workers=3`. With
+`MEDSEARCH_WORKERS=1` the vector matrices are **bit-identical**
+(`np.array_equal`, not a file checksum -- gensim's `.kv` serialisation is not
+byte-stable, so md5 differs even when the vectors do not). Cost: 279 s against
+150 s, 1.9x.
+
+**The bigger find: the integrity guard could not see a retrain.**
+`model_fingerprint` hashes (kind, corpus, hyperparameters) -- *not* the
+vectors. Two runs of one config share it, and gensim above one worker gives
+different vectors. So an index built from run 1 paired "validly" with run 2:
+fingerprints matched, `doctor --full` printed *"every artefact is consistent
+with its model and the live corpus"*, and the stored rows scored **cosine 0.96**
+against the live model instead of 1.00.
+
+That is the legacy K1/K2 failure exactly -- wrong pairing, no signal -- in the
+guard built to prevent it. Fixed with `vectors_checksum`, a hash of the matrix
+itself, stamped into the model metadata and the index manifest and verified at
+load and in `doctor --full`. Both now fail loudly and name the two checksums.
+
+**A second defect fell out of fixing the first.** `registry.py` rebuilt
+`ModelMetadata` field by field to fill in `artefact_bytes` -- twelve fields
+copied by hand. It silently dropped the thirteenth, so every model shipped with
+an empty checksum and the new guard was inert until I noticed. Replaced with
+`dataclasses.replace`, which cannot drift from the dataclass. *A manual copy of
+every field is a bug waiting for the next field.*
+
+**How I found it:** by accident, checking whether `workers=1` was
+deterministic. The retrains left the index stale, `doctor --full` said
+everything was fine, and that claim was checkable — so I checked it.

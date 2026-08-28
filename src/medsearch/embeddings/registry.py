@@ -15,6 +15,7 @@ and raised ``FileNotFoundError`` on Linux.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from medsearch._typing import WordVectors
@@ -63,19 +64,13 @@ def save_model(
     vectors.save(str(target))  # type: ignore[attr-defined]  # not on the read protocol
 
     total_bytes = sum(f.stat().st_size for f in model_dir.glob("model.kv*") if f.is_file())
-    stamped = ModelMetadata(
-        kind=metadata.kind,
-        fingerprint=metadata.fingerprint,
-        corpus_fingerprint=metadata.corpus_fingerprint,
-        corpus_documents=metadata.corpus_documents,
-        vocabulary_size=metadata.vocabulary_size,
-        params=metadata.params,
-        gensim_version=metadata.gensim_version,
-        artefact_bytes=total_bytes,
-        training_seconds=metadata.training_seconds,
-        trained_at=metadata.trained_at,
-        sampled=metadata.sampled,
-    )
+    # `replace`, not a field-by-field rebuild. The rebuild this used to be
+    # copied twelve fields by hand and silently dropped any thirteenth: when
+    # `vectors_checksum` was added, it was constructed correctly in the trainer
+    # and then discarded here, so every model shipped with an empty checksum
+    # and the new integrity guard was inert. `replace` cannot drift from the
+    # dataclass.
+    stamped = replace(metadata, artefact_bytes=total_bytes)
     stamped.save(metadata_path(model_dir))
 
     size_mb = total_bytes / (1024**2)

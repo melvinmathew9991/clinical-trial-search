@@ -55,6 +55,9 @@ class DocumentIndex:
     model_kind: str
     field: str
     corpus_fingerprint: str
+    #: Checksum of the model vectors this index was built from. Empty for
+    #: indexes written before the check existed.
+    model_vectors_checksum: str = ""
     pooling: str = "mean"
     principal_component: FloatArray | None = None
 
@@ -117,6 +120,7 @@ class DocumentIndex:
             "model_kind": self.model_kind,
             "field": self.field,
             "corpus_fingerprint": self.corpus_fingerprint,
+            "model_vectors_checksum": self.model_vectors_checksum,
             "documents": self.size,
             "dim": self.dim,
             "dtype": "float32",
@@ -141,6 +145,7 @@ class DocumentIndex:
         directory: Path,
         *,
         expected_fingerprint: str | None = None,
+        expected_vectors_checksum: str | None = None,
         mmap: bool = True,
     ) -> DocumentIndex:
         """Load an index, optionally verifying it against a model.
@@ -164,6 +169,26 @@ class DocumentIndex:
         if expected_fingerprint is not None and actual != expected_fingerprint:
             raise ArtefactMismatchError(expected=expected_fingerprint, actual=actual)
 
+        # The fingerprint above only proves the *configuration* matches. Two
+        # runs of the same config hold different vectors whenever workers > 1,
+        # and an index built from the earlier run passed this check while
+        # holding measurably wrong rows. Compare the artefact too.
+        stored_checksum = str(manifest.get("model_vectors_checksum", ""))
+        if expected_vectors_checksum and stored_checksum:
+            if stored_checksum != expected_vectors_checksum:
+                raise ArtefactMismatchError(
+                    expected=expected_vectors_checksum,
+                    actual=stored_checksum,
+                    subject="vector checksum",
+                )
+        elif expected_vectors_checksum and not stored_checksum:
+            logger.warning(
+                "Index %s predates the vector checksum and cannot be verified "
+                "against the model that is loaded. Rebuild it with "
+                "`medsearch index build` to restore the guarantee.",
+                directory.name,
+            )
+
         vectors = (
             np.load(directory / _VECTORS_FILENAME, mmap_mode="r")
             if mmap
@@ -181,6 +206,7 @@ class DocumentIndex:
             model_kind=str(manifest["model_kind"]),
             field=str(manifest["field"]),
             corpus_fingerprint=str(manifest.get("corpus_fingerprint", "")),
+            model_vectors_checksum=stored_checksum,
             # Default "mean" keeps indexes built before SIF loadable.
             pooling=str(manifest.get("pooling", "mean")),
             principal_component=component,

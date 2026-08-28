@@ -13,7 +13,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from medsearch._typing import WordVectors
-from medsearch.embeddings.base import ModelKind, ModelMetadata, TrainingParams
+from medsearch.embeddings.base import ModelKind, ModelMetadata, TrainingParams, vectors_checksum
 from medsearch.exceptions import ModelError, ResourceError
 from medsearch.logging_conf import get_logger, stage
 from medsearch.runtime import available_memory_gb, release_memory
@@ -165,6 +165,7 @@ def train_model(
     metadata = ModelMetadata(
         kind=kind.value,
         fingerprint=_model_fingerprint(kind, params, corpus_fingerprint),
+        vectors_checksum=vectors_checksum(vectors.vectors),
         corpus_fingerprint=corpus_fingerprint,
         corpus_documents=document_count,
         vocabulary_size=len(vectors),

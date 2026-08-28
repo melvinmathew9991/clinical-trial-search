@@ -110,6 +110,13 @@ class FakeKeyedVectors:
         self.vector_size = vector_size
         self.index_to_key = list(vocabulary)
         self.bucket = 0
+        # Mirrors KeyedVectors.vectors: the matrix in index order. Needed so
+        # provenance can checksum the artefact.
+        self.vectors = (
+            np.vstack([vocabulary[k] for k in self.index_to_key])
+            if vocabulary
+            else np.zeros((0, vector_size), dtype=np.float32)
+        )
 
     def __contains__(self, key: str) -> bool:
         return key in self._vectors
