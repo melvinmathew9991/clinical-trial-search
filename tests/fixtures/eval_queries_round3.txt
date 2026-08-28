@@ -1,0 +1,47 @@
+# Round 3 -- the cases the first 97 queries cannot see.
+#
+# EVALUATION_AUDIT.md sections 3 and 4 fixed two real preprocessing defects:
+# the tokeniser destroyed alphanumeric biomedical identity, and negation was
+# dropped inconsistently. Neither could be measured, because not one of the 97
+# queries contains a digit or a trial code and only one is negation-shaped.
+# These queries exist to make those fixes measurable. Three strata, scored
+# separately -- they are different retrieval tasks and averaging them would
+# hide all three.
+#
+# S1 -- alphanumeric entity identity. Chosen as COLLAPSE PAIRS: under the old
+# digit-stripping chain IL-6/IL-1 both become "il", CD4/CD8 both become "cd",
+# SARS-CoV-1/SARS-CoV-2/MERS-CoV all shed their distinguishing token. If the
+# fix does anything, it is here that it shows.
+IL-6 inhibitor for cytokine storm
+IL-1 blockade in covid-19
+CD4 T cell response
+CD8 T cell response
+SARS-CoV-2 neutralising antibody
+MERS-CoV and SARS-CoV-1 comparison
+BNT162b2 vaccine trial
+mRNA-1273 vaccine immunogenicity
+ChAdOx1 nCoV-19 vaccine
+ACE2 receptor expression
+D-dimer levels and thrombosis
+vitamin D3 supplementation
+#
+# S2 -- known-item retrieval by registry code. Ground truth here needs no
+# judgement: a document is relevant iff its text contains the code. All three
+# codes are cited by OTHER trials (companion and extension studies), never
+# self-references, so this measures retrieval and not row lookup.
+NCT04446429
+NCT04317092
+NCT04372368
+#
+# S3 -- negation, as four PAIRS. Each negated query is preceded by its
+# positive control. The pair is the measurement: if a system returns the same
+# documents for "hospitalized" and "non-hospitalized", it does not represent
+# negation, and that is visible from rank overlap before any judging happens.
+hospitalized patients with covid-19
+non-hospitalized patients with covid-19
+patients requiring supplemental oxygen
+patients not requiring supplemental oxygen
+severe covid-19 pneumonia
+non-severe covid-19 pneumonia
+treatment with mechanical ventilation
+treatment without mechanical ventilation
