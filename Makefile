@@ -110,6 +110,10 @@ type:  ## mypy --strict
 layers:  ## Enforce the Architecture.md layer contract
 	$(BIN)/lint-imports
 
+.PHONY: lengths
+lengths:  ## Enforce the Rules.md section 3 function-length caps
+	$(BIN)/python scripts/check_function_length.py
+
 .PHONY: test
 test:  ## Run the fast test suite with coverage
 	$(BIN)/pytest
@@ -119,13 +123,13 @@ test-all:  ## Full suite including integration, with the 80% coverage gate
 	$(BIN)/pytest -m "" --cov-fail-under=80
 
 .PHONY: check
-check: lint type layers test-all  ## Everything CI runs, locally
+check: lint type layers lengths test-all  ## Everything CI runs, locally
 
 # ---------------------------------------------------------------- housekeeping
 .PHONY: clean
 clean:  ## Remove caches and build artefacts (keeps data/ and models/)
-	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage htmlcov build dist *.egg-info
-	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+	rm -rf .pytest_cache .mypy_cache .ruff_cache .import_linter_cache .coverage htmlcov build dist *.egg-info src/*.egg-info
+	find . -path ./.venv -prune -o -type d -name __pycache__ -exec rm -rf {} +
 
 .PHONY: clean-artefacts
 clean-artefacts:  ## Delete trained models and indexes (frees ~1 GB)

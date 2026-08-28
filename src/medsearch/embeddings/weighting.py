@@ -35,6 +35,7 @@ from pathlib import Path
 import numpy as np
 
 from medsearch._typing import FloatArray
+from medsearch.exceptions import EmptyCorpusError
 from medsearch.logging_conf import get_logger
 
 logger = get_logger(__name__)
@@ -87,8 +88,14 @@ class SifWeights:
 
         total = sum(counts.values())
         if total == 0:
-            msg = "Cannot compute SIF weights: the corpus contains no tokens."
-            raise ValueError(msg)
+            # EmptyCorpusError, not ValueError: "loaded, but no usable text" is
+            # precisely what the typed class exists for (Rules section 4).
+            raise EmptyCorpusError(
+                "Cannot compute SIF weights: the corpus contains no tokens.\n"
+                "  Expected: a token cache holding at least one term.\n"
+                "  Fix: re-run `medsearch preprocess --force`. An empty cache "
+                "usually means the text field was blank for every row."
+            )
 
         weights = {token: a / (a + count / total) for token, count in counts.items()}
 

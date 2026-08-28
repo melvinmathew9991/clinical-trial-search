@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from medsearch.embeddings.document import DocumentEmbedder, l2_normalize
+from medsearch.exceptions import ArtefactMismatchError
 from medsearch.search.engine import SearchEngine, SearchResponse
 from medsearch.search.index import DocumentIndex
 
@@ -150,7 +151,10 @@ class TestEngineContracts:
             field="abstract",
             corpus_fingerprint="c",
         )
-        with pytest.raises(ValueError, match="does not match"):
+        # Typed since the pre-deployment audit: a dimension mismatch is the same
+        # wrong-pairing failure the fingerprint check guards, so it raises the same
+        # class and the CLI renders it without a traceback.
+        with pytest.raises(ArtefactMismatchError, match="dimensions"):
             SearchEngine(index, DocumentEmbedder(fake_vectors), stub_preprocessor, pd.DataFrame())
 
     def test_size_reports_indexed_documents(self, engine: SearchEngine) -> None:

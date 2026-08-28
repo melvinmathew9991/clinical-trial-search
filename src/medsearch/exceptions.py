@@ -34,8 +34,9 @@ class CorpusNotFoundError(DataError):
         super().__init__(
             f"Corpus not found at {path}.\n"
             f"  Expected: the Dimensions COVID-19 clinical-trial CSV export.\n"
-            f"  Fix: run `make data` to migrate it from the legacy Part_1 folder, "
-            f"or place the file at {path} yourself."
+            f"  Fix: place the Dimensions export at {path}.\n"
+            f"  Note: the legacy Part_1 copy was deleted once the migration was "
+            f"verified, so `make data` can no longer recover it."
         )
         self.path = path
 
@@ -82,7 +83,7 @@ class ArtefactMismatchError(ModelError):
     """An index was built by a different model than the one now loaded.
 
     Guards against the legacy failure mode where FastText result files were
-    silently populated with Skip-gram vectors (Part 1 ``engine.py`` lines
+    silently populated with Skip-gram vectors (reference/legacy/modular-code ``engine.py`` lines
     36 and 41).
     """
 

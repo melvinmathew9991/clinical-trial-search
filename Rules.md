@@ -41,7 +41,7 @@
 | `faiss`, `pinecone`, `chromadb` | Overkill at 10k docs; both memory and a dependency we do not need | numpy matmul |
 | `torch`, `transformers`, `sentence-transformers` | Explicit PRD non-goal; will not fit the memory budget | — |
 | `tensorflow`, `keras` | Same | — |
-| `os.path` string joins | Breaks across OS; caused a real Part 1 bug | `pathlib.Path` |
+| `os.path` string joins | Breaks across OS; caused a real reference/legacy/modular-code bug | `pathlib.Path` |
 | `pickle` for model artefacts | Unsafe, version-fragile; Part 2 tried to `pickle.load` a gensim `.bin` | `KeyedVectors.save/load` |
 | `requests` / `urllib` to fetch from Blob | No auth story | `azure-storage-blob` + `DefaultAzureCredential` |
 | Bare `print()` in `src/` | Unstructured, unfilterable | `logger.info()` |
@@ -95,6 +95,7 @@ These are **hard** limits, not guidance. The target machine is 4 threads / 7.89 
 - **Type-annotate every public function.** `mypy --strict` must pass on `src/medsearch`.
 - **Docstrings** on every public module, class, and function. Google style. State units and shapes: `(n_docs, dim) float32`.
 - **Functions do one thing.** Soft cap 40 lines; hard cap 60. `top_n()` in the legacy code did seven things in 45 lines — that is the anti-pattern.
+  Enforced by `scripts/check_function_length.py` (`make lengths`, pre-commit, CI). It counts body lines only — docstrings, blanks, and comment-only lines are excluded, so documenting a function well never costs against the cap. Soft-cap hits warn; hard-cap hits fail. Unenforced from Sprint 0 to Sprint 8, during which two functions crossed the hard cap unnoticed.
 - **Descriptive names.** No `K`, `K1`, `K11`, `KK`, `p`, `x`, `tmp`, `res`, `L`. If a reviewer must scroll up to learn what a variable holds, rename it.
 - **`@dataclass(frozen=True, slots=True)`** for value objects. `slots` measurably cuts per-instance memory.
 - **Pure functions by default.** Side effects live in `pipelines/` and `cli.py`.
@@ -142,7 +143,7 @@ MedSearchError                 # base — never raised directly
 
 ## 5. Testing
 
-- Every `src/medsearch` module has a `tests/unit/test_<module>.py`.
+- Every `src/medsearch` module has a `tests/unit/test_<module>.py`, with two stated exemptions: `_typing.py` (type aliases only — nothing to execute) and `app/` (Streamlit callbacks, excluded from the coverage gate and covered by the container health check instead). Everything else needs its own file; `exceptions.py`, `logging_conf.py`, and `search/baseline.py` went eleven sprints on transitive coverage alone, and a pre-deployment audit found real defects in two of the three.
 - **Unit tests never touch the network, the 29 MB corpus, or a trained model.** Use `tests/fixtures/sample_corpus.csv` (20 rows) and the toy vectors built in `conftest.py`. The default `pytest` run is unit-only and must stay under 30 seconds.
 - **Integration tests may train**, over the 20-row fixture at 16 dimensions and one epoch. They are marked `slow` so the fast loop skips them; `make test-all` and CI run them, and that is where the coverage gate is enforced. Anything that trains a model belongs there, not in `tests/unit/`.
 - Test names describe behaviour: `test_engine_returns_empty_when_query_is_all_oov`.

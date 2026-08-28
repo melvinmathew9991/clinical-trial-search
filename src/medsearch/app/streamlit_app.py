@@ -51,7 +51,7 @@ def load_union(model: str, field: str) -> object:
     from medsearch.pipelines.train import load_union_retriever
 
     settings = get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, json_output=settings.log_json)
     return load_union_retriever(
         settings,
         model,  # type: ignore[arg-type]
@@ -70,7 +70,7 @@ def load_engine(model: str, field: str) -> object:
     from medsearch.pipelines.train import load_search_engine
 
     settings = get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, json_output=settings.log_json)
     return load_search_engine(
         settings,
         model,  # type: ignore[arg-type]

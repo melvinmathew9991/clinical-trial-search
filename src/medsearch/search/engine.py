@@ -20,6 +20,7 @@ import pandas as pd
 from medsearch._typing import FloatArray, IntArray
 from medsearch.data.schema import CorpusSchema
 from medsearch.embeddings.document import DocumentEmbedder
+from medsearch.exceptions import ArtefactMismatchError
 from medsearch.logging_conf import get_logger
 from medsearch.preprocessing.pipeline import TextPreprocessor
 from medsearch.search.index import DocumentIndex
@@ -65,9 +66,15 @@ class SearchResponse:
 
     def to_frame(self) -> pd.DataFrame:
         """Render as a DataFrame for display."""
+        # Annotated locals rather than bare returns: newer pandas-stubs type
+        # the DataFrame constructor as Any, which mypy --strict rejects as
+        # "Returning Any". Passes on the local 3.10 stubs, fails on 3.11/3.12.
         if not self.results:
-            return pd.DataFrame(columns=["rank", "score", *CorpusSchema.result_columns])
-        return pd.DataFrame(
+            empty: pd.DataFrame = pd.DataFrame(
+                columns=["rank", "score", *CorpusSchema.result_columns]
+            )
+            return empty
+        frame: pd.DataFrame = pd.DataFrame(
             [
                 {
                     "rank": r.rank,
@@ -80,6 +87,7 @@ class SearchResponse:
                 for r in self.results
             ]
         )
+        return frame
 
 
 class SearchEngine:
@@ -106,11 +114,14 @@ class SearchEngine:
         corpus: pd.DataFrame,
     ) -> None:
         if index.dim != embedder.dim:
-            msg = (
-                f"Index dimensionality ({index.dim}) does not match the model "
-                f"({embedder.dim}). Rebuild the index."
+            # Typed, not ValueError: this is the same wrong-pairing failure the
+            # fingerprint check catches, detected by shape instead. A caller
+            # handling MedSearchError should handle this too, and the CLI then
+            # renders it without a traceback (Rules section 4).
+            raise ArtefactMismatchError(
+                expected=f"an index of {embedder.dim} dimensions",
+                actual=f"an index of {index.dim} dimensions",
             )
-            raise ValueError(msg)
 
         self._index = index
         self._embedder = embedder
@@ -121,6 +132,27 @@ class SearchEngine:
     def size(self) -> int:
         """Number of searchable documents."""
         return self._index.size
+
+    @property
+    def corpus(self) -> pd.DataFrame:
+        """The corpus rows this engine's index actually covers.
+
+        Exposed so a companion retriever reuses this frame instead of loading
+        a second one. Two independent loads cost ~35 MB and, worse, can
+        disagree: this frame is aligned to the index (a sampled index pairs
+        with a sampled corpus), while a fresh ``load_corpus`` with no limit
+        returns all 10,666 rows.
+        """
+        return self._corpus
+
+    @property
+    def sampled_limit(self) -> int | None:
+        """Row cap the backing index was built under, or ``None`` if full.
+
+        Lets a caller reproduce the corpus slice this engine holds without
+        reaching into the index.
+        """
+        return self._index.sampled_limit
 
     def preprocess(self, query: str) -> list[str]:
         """Tokenize a query with the engine's preprocessor.

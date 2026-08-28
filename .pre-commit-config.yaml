@@ -8,8 +8,14 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
+      # reference/legacy/ is a frozen record of the code this project
+      # replaced. These hooks would rewrite it -- trailing whitespace, final
+      # newlines, CRLF -- and a doctored exhibit is worth less than none.
+      # detect-private-key and the SAS-token blocker still cover it.
       - id: trailing-whitespace
+        exclude: ^reference/legacy/
       - id: end-of-file-fixer
+        exclude: ^reference/legacy/
       - id: check-yaml
       - id: check-toml
       - id: check-json
@@ -17,6 +23,7 @@ repos:
       - id: check-case-conflict      # catches FastText-vec vs Fasttext-vec
       - id: detect-private-key
       - id: mixed-line-ending
+        exclude: ^reference/legacy/
         args: [--fix=lf]
       - id: check-added-large-files
         args: [--maxkb=5120]         # artefacts belong in data/ and models/
@@ -25,8 +32,10 @@ repos:
     rev: v0.5.7
     hooks:
       - id: ruff
+        exclude: ^reference/legacy/
         args: [--fix]
       - id: ruff-format
+        exclude: ^reference/legacy/
 
   # mypy runs from the PROJECT environment, not a pre-commit sandbox.
   #
@@ -42,6 +51,19 @@ repos:
       - id: mypy
         name: mypy --strict (project env)
         entry: mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+        files: ^src/medsearch/
+
+  # Rules.md section 3 caps function length; nothing enforced it for eleven
+  # sprints, and by Sprint 8 two functions were over the hard cap. Ruff cannot
+  # express a line-count rule -- PLR0915 counts statements -- so this is local.
+  - repo: local
+    hooks:
+      - id: function-length
+        name: function length (Rules section 3)
+        entry: python scripts/check_function_length.py
         language: system
         types: [python]
         pass_filenames: false

@@ -3,3 +3,6 @@
 * text=auto eol=lf
 *.png binary
 *.pdf binary
+
+# The frozen legacy reference keeps its original bytes -- CRLF included.
+reference/legacy/** -text

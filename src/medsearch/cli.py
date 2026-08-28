@@ -17,7 +17,7 @@ from typing import cast  # noqa: E402
 
 import typer  # noqa: E402
 
-from medsearch.config import FieldName, ModelName, Pooling, get_settings  # noqa: E402
+from medsearch.config import FieldName, ModelName, Pooling, Settings, get_settings  # noqa: E402
 from medsearch.exceptions import ConfigurationError, MedSearchError  # noqa: E402
 from medsearch.logging_conf import configure_logging, get_logger  # noqa: E402
 from medsearch.runtime import (  # noqa: E402
@@ -101,20 +101,17 @@ def _fail(exc: MedSearchError) -> None:
 
 
 # ---------------------------------------------------------------- doctor
-@app.command()
-def doctor(
-    full: bool = typer.Option(False, "--full", help="Also check artefact integrity."),
-) -> None:
-    """Preflight check: cores, memory, disk, NLTK data, artefact budget."""
-    _bootstrap()
-    settings = get_settings()
+def _check_resources(settings: Settings) -> tuple[list[str], list[str]]:
+    """Check RAM and worker count against what training needs.
 
-    typer.echo(system_report(settings.effective_workers, settings.data_dir).render())
+    Returns:
+        ``(problems, warnings)``. A problem fails the preflight; a warning is
+        reported and tolerated.
+    """
+    from medsearch.runtime import available_memory_gb
 
     problems: list[str] = []
     warnings: list[str] = []
-
-    from medsearch.runtime import available_memory_gb
 
     available = available_memory_gb()
     if available < settings.min_free_memory_gb:
@@ -130,6 +127,57 @@ def doctor(
             f"workers={settings.effective_workers} on {cpu_count()} logical cores "
             f"leaves nothing for the OS. Set MEDSEARCH_WORKERS=0 for auto."
         )
+    return problems, warnings
+
+
+def _report_artefacts(settings: Settings) -> list[str]:
+    """Print artefact sizes and integrity findings for ``doctor --full``.
+
+    Returns:
+        Problems worth failing the preflight over -- integrity findings at
+        ERROR severity. Warnings print here and are not returned, since
+        nothing downstream acts on them.
+    """
+    from medsearch.pipelines.integrity import Severity, check_artefacts
+    from medsearch.pipelines.train import artefact_report
+
+    typer.echo("\n  Artefacts:")
+    for name, size_mb in artefact_report(settings):
+        flag = "  <-- over budget" if size_mb > settings.max_artefact_mb else ""
+        typer.echo(f"    {size_mb:8.1f} MB  {name}{flag}")
+
+    typer.echo("\n  Integrity:")
+    try:
+        findings = check_artefacts(settings)
+    except MedSearchError as exc:
+        typer.secho(f"    could not verify: {exc}", fg=typer.colors.YELLOW)
+        return []
+
+    if not findings:
+        typer.secho(
+            "    every artefact is consistent with its model and the live corpus",
+            fg=typer.colors.GREEN,
+        )
+    problems: list[str] = []
+    for finding in findings:
+        colour = typer.colors.RED if finding.severity is Severity.ERROR else typer.colors.YELLOW
+        typer.secho(f"  {finding.render()}", fg=colour)
+        if finding.severity is Severity.ERROR:
+            problems.append(f"{finding.code}: {finding.message}")
+    return problems
+
+
+@app.command()
+def doctor(
+    full: bool = typer.Option(False, "--full", help="Also check artefact integrity."),
+) -> None:
+    """Preflight check: cores, memory, disk, NLTK data, artefact budget."""
+    _bootstrap()
+    settings = get_settings()
+
+    typer.echo(system_report(settings.effective_workers, settings.data_dir).render())
+
+    problems, warnings = _check_resources(settings)
 
     predicted_mb = (settings.fasttext_bucket * settings.vector_size * 4) / 1024**2
     typer.echo(
@@ -153,32 +201,7 @@ def doctor(
         warnings.append(f"NLTK data unavailable: {exc}")
 
     if full:
-        from medsearch.pipelines.integrity import Severity, check_artefacts
-        from medsearch.pipelines.train import artefact_report
-
-        typer.echo("\n  Artefacts:")
-        for name, size_mb in artefact_report(settings):
-            flag = "  <-- over budget" if size_mb > settings.max_artefact_mb else ""
-            typer.echo(f"    {size_mb:8.1f} MB  {name}{flag}")
-
-        typer.echo("\n  Integrity:")
-        try:
-            findings = check_artefacts(settings)
-        except MedSearchError as exc:
-            typer.secho(f"    could not verify: {exc}", fg=typer.colors.YELLOW)
-        else:
-            if not findings:
-                typer.secho(
-                    "    every artefact is consistent with its model and the live corpus",
-                    fg=typer.colors.GREEN,
-                )
-            for finding in findings:
-                colour = (
-                    typer.colors.RED if finding.severity is Severity.ERROR else typer.colors.YELLOW
-                )
-                typer.secho(f"  {finding.render()}", fg=colour)
-                if finding.severity is Severity.ERROR:
-                    problems.append(f"{finding.code}: {finding.message}")
+        problems.extend(_report_artefacts(settings))
 
     for warning in warnings:
         typer.secho(f"\n  WARN  {warning}", fg=typer.colors.YELLOW)

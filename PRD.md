@@ -420,7 +420,7 @@ mistake §8.2 and §8.3 were run to avoid, and the union numbers they produce
 v1 is done when a new engineer can run:
 
 ```bash
-git clone <repo> && cd medical-embeddings-search
+git clone <repo> && cd clinical-trial-search
 make setup
 make doctor        # preflight: cores, free RAM, disk, artefact budget
 make train         # both models + index, ≤ 15 min, ≤ 2.5 GB peak

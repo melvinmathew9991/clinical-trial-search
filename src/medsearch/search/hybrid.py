@@ -76,7 +76,7 @@ class UnionRetriever:
         self._engine = engine
         self._baseline = baseline
         self._corpus = corpus
-        self._trial_ids = corpus["trial_id"].astype(str).tolist()
+        self._trial_ids: list[str] = corpus["trial_id"].astype(str).tolist()
 
     @property
     def size(self) -> int:

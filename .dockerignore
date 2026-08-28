@@ -1,5 +1,5 @@
-data/
-models/
+data/**
+models/**
 reports/
 notebooks/
 .git/
@@ -20,3 +20,16 @@ htmlcov/
 *.npy
 *.kv
 tests/
+
+# The `standalone` build target bakes artefacts into the image instead of
+# mounting them, which is what makes an App Service Free (F1) deployment
+# possible -- see deploy/README.md section 6. Only the four paths the serving
+# path actually reads are un-ignored; everything else above still applies.
+#
+# This costs ~110 MB of build context on every build, including the default
+# `runtime` target that does not copy them. That is the price of one Dockerfile
+# rather than two that drift apart.
+!models/**
+!data/raw/**
+!data/interim/**
+!data/processed/**

@@ -1,4 +1,4 @@
-"""One-shot migration from the legacy Part_1 / Part_2 layout.
+"""One-shot migration from the legacy reference/legacy layout.
 
 Moves the source corpus into ``data/raw/`` and reports the legacy artefacts
 that are deliberately *not* migrated (Architecture.md section 12).
@@ -11,6 +11,13 @@ Usage::
 
     python scripts/migrate_legacy.py --dry-run     # default, shows the plan
     python scripts/migrate_legacy.py --apply
+
+**The migration is complete and its sources are gone.** Once the corpus and
+notebook were verified in place, the legacy copies were deleted to reclaim
+~900 MB; everything in ``SUPERSEDED`` went with them. Both plans now report
+MISSING, which is the correct answer -- there is nothing left to migrate. The
+script is kept because it is the record of what moved where, and because
+``Architecture.md`` section 14 cites it.
 """
 
 from __future__ import annotations
@@ -31,7 +38,7 @@ MOVE_PLAN: tuple[tuple[str, str], ...] = (
         "data/raw/dimension-covid.csv",
     ),
     (
-        "Part_1/Ipython Notebook/Ipython Notebook/Medical Embeddings_Final.ipynb",
+        "notebooks/Medical Embeddings_Final.ipynb",
         "notebooks/01-exploration.ipynb",
     ),
 )
@@ -39,7 +46,7 @@ MOVE_PLAN: tuple[tuple[str, str], ...] = (
 #: Legacy artefacts v1 regenerates. Listed, never auto-deleted.
 SUPERSEDED: tuple[tuple[str, str], ...] = (
     (
-        "Part_1/Modular+Code/Modular Code/Medical_Embeddings/output",
+        "reference/legacy/modular-code/output",
         "Models and CSV vectors -- retrained under ADR-001 (bounded bucket) and "
         "ADR-002 (.npy index). Includes the 800 MB vectors_ngrams.npy.",
     ),
@@ -110,8 +117,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Legacy root : {LEGACY_ROOT}")
     print(f"Repo root   : {REPO_ROOT}")
-    print(f"Mode        : {'APPLY' if apply else 'DRY RUN'}"
-          f"{' (copy)' if args.copy else ' (move)'}\n")
+    print(
+        f"Mode        : {'APPLY' if apply else 'DRY RUN'}{' (copy)' if args.copy else ' (move)'}\n"
+    )
 
     actions = plan_moves()
     print("Files to migrate")

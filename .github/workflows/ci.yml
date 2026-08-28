@@ -49,6 +49,9 @@ jobs:
       - name: Enforce layer contract (import-linter)
         run: lint-imports
 
+      - name: Function-length caps (Rules section 3)
+        run: python scripts/check_function_length.py
+
       - name: Test (full suite + coverage gate)
         run: pytest -m "" --cov-fail-under=80
 
@@ -103,8 +106,12 @@ jobs:
           set +e
           # The legacy Part_2 committed live Azure SAS tokens with
           # read/write/delete rights. This pattern set catches that class.
+          # The scanner must exclude the two files that *define* the same
+          # patterns (this workflow and .pre-commit-config.yaml) and the
+          # legacy README that documents the permission string, or the gate
+          # reports itself and can never go green.
           patterns='sig=[A-Za-z0-9%+/]{20,}|sp=r[acwdlmeop]{2,}&|AccountKey=|BEGIN (RSA|OPENSSH|PRIVATE) KEY|DefaultEndpointsProtocol=.*AccountKey'
-          hits=$(grep -rInE "$patterns" --include='*.py' --include='*.json' --include='*.yml' --include='*.yaml' --include='*.toml' --include='*.md' . | grep -v '\.github/workflows/ci.yml')
+          hits=$(grep -rInE "$patterns" --include='*.py' --include='*.json' --include='*.yml' --include='*.yaml' --include='*.toml' --include='*.md' . | grep -vE '\.github/workflows/ci\.yml|\.pre-commit-config\.yaml|^\./reference/legacy/README\.md')
           if [ -n "$hits" ]; then
             echo "::error::Possible credential committed:"
             echo "$hits"
