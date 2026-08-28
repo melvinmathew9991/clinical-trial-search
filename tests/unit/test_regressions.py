@@ -1,4 +1,4 @@
-"""Regression tests for the four defects found in the legacy Part_1 / Part_2 code.
+"""Regression tests for the four defects found in the legacy reference/legacy code.
 
 Each test here exists because the original project shipped the bug. They are
 grouped in one module so the link between "what went wrong before" and "what

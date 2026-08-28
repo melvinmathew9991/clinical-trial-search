@@ -7,23 +7,70 @@
   },
   "properties": {
     "siteConfig": {
-      "linuxFxVersion": "DOCKER|ghcr.io/OWNER/medical-embeddings-search:latest",
+      "linuxFxVersion": "DOCKER|ghcr.io/OWNER/clinical-trial-search:latest",
       "alwaysOn": true,
       "healthCheckPath": "/_stcore/health",
       "ftpsState": "Disabled",
       "minTlsVersion": "1.2",
       "http20Enabled": true,
       "appSettings": [
-        { "name": "WEBSITES_PORT", "value": "8501" },
-        { "name": "WEBSITES_CONTAINER_START_TIME_LIMIT", "value": "300" },
-        { "name": "MEDSEARCH_LOG_LEVEL", "value": "INFO" },
-        { "name": "MEDSEARCH_LOG_JSON", "value": "true" },
-        { "name": "OMP_NUM_THREADS", "value": "1" },
-        { "name": "MKL_NUM_THREADS", "value": "1" },
-        { "name": "OPENBLAS_NUM_THREADS", "value": "1" },
-        { "name": "AZURE_STORAGE_ACCOUNT_URL", "value": "REPLACE_ME" },
-        { "name": "AZURE_BLOB_CONTAINER", "value": "medsearch" }
-      ]
+        {
+          "name": "WEBSITES_PORT",
+          "value": "8501"
+        },
+        {
+          "name": "WEBSITES_CONTAINER_START_TIME_LIMIT",
+          "value": "300"
+        },
+        {
+          "name": "MEDSEARCH_LOG_LEVEL",
+          "value": "INFO"
+        },
+        {
+          "name": "MEDSEARCH_LOG_JSON",
+          "value": "true"
+        },
+        {
+          "name": "OMP_NUM_THREADS",
+          "value": "1"
+        },
+        {
+          "name": "MKL_NUM_THREADS",
+          "value": "1"
+        },
+        {
+          "name": "OPENBLAS_NUM_THREADS",
+          "value": "1"
+        },
+        {
+          "name": "AZURE_STORAGE_ACCOUNT_URL",
+          "value": "REPLACE_ME"
+        },
+        {
+          "name": "AZURE_BLOB_CONTAINER",
+          "value": "medsearch"
+        },
+        {
+          "_comment": "Matches run_training.py's --mount/data. Holds raw/, interim/, processed/.",
+          "name": "MEDSEARCH_DATA_DIR",
+          "value": "/mnt/artefacts/data"
+        },
+        {
+          "_comment": "Matches run_training.py's --mount/models.",
+          "name": "MEDSEARCH_MODEL_DIR",
+          "value": "/mnt/artefacts/models"
+        }
+      ],
+      "azureStorageAccounts": {
+        "artefacts": {
+          "_comment": "Read-only blob mount: how the container gets its models and indexes. Databricks writes them here (run_training.py builds Settings with data_dir=$mount/data, model_dir=$mount/models) and the app reads the same layout back. NOTE: App Service storage mounts authenticate with a storage ACCESS KEY, not the managed identity -- Microsoft's docs state that accounts with key-based authentication disabled are unsupported. Put the key in Key Vault and reference it from accessKey; the managed identity still covers everything else the app talks to. Azure Blob mounts are read-only, which is what we want for artefacts.",
+          "type": "AzureBlob",
+          "accountName": "REPLACE_ME",
+          "shareName": "medsearch",
+          "mountPath": "/mnt/artefacts",
+          "accessKey": "@Microsoft.KeyVault(SecretUri=REPLACE_ME)"
+        }
+      }
     }
   },
   "sku": {

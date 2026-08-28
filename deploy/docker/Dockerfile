@@ -37,7 +37,7 @@ FROM python:3.11-slim AS runtime
 
 LABEL org.opencontainers.image.title="medsearch" \
       org.opencontainers.image.description="Semantic search over COVID-19 clinical trials" \
-      org.opencontainers.image.source="https://github.com/<owner>/medical-embeddings-search"
+      org.opencontainers.image.source="https://github.com/<owner>/clinical-trial-search"
 
 # Pin BLAS threads in the image too. A container scheduled onto a many-core
 # host would otherwise spawn one thread per host core inside a 1-2 vCPU
@@ -73,3 +73,32 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 
 CMD ["streamlit", "run", "src/medsearch/app/streamlit_app.py", \
      "--server.address=0.0.0.0", "--server.port=8501"]
+
+
+# ------------------------------------------------------------- standalone
+# Everything above assumes artefacts arrive at runtime -- a compose volume
+# locally, an Azure Storage mount in App Service. Both need somewhere to mount
+# *from*, and App Service Free (F1) gives you no storage account.
+#
+# This target bakes them in instead:
+#
+#     docker build --target standalone -t medsearch:standalone -f deploy/docker/Dockerfile .
+#
+# The trade is explicit: a retrain now needs an image rebuild, and the image
+# grows by ~110 MB. In exchange the container has no external dependency at
+# all, which is the difference between deployable and not on the free tier.
+#
+# Why all four paths -- none is optional at serve time:
+#   models/          the .kv vectors and metadata
+#   data/processed/  the document index (ADR-002)
+#   data/raw/        the corpus; results render trial titles and abstracts
+#   data/interim/    the token cache. Without it the TF-IDF half of the union
+#                    re-preprocesses 10,666 documents on first query -- 46 s
+#                    out of a 60-minute daily CPU budget, on every cold start,
+#                    and F1 has no Always On so cold starts are routine.
+FROM runtime AS standalone
+
+COPY --chown=app:app models ./models
+COPY --chown=app:app data/raw ./data/raw
+COPY --chown=app:app data/interim ./data/interim
+COPY --chown=app:app data/processed ./data/processed

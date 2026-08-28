@@ -28,7 +28,7 @@ a morphological variant it never saw — useful in a domain full of them.
 ## Quickstart
 
 ```bash
-git clone <repo> && cd medical-embeddings-search
+git clone <repo> && cd clinical-trial-search
 
 make setup      # venv + install + NLTK corpora
 make doctor     # preflight: cores, free RAM, disk, artefact budget
@@ -204,9 +204,11 @@ Vocabulary 24,897 words. Out-of-vocabulary documents: **2 of 10,666 (0.02%)**.
 
 **Query latency** over 120 queries after warm-up: p50 **1.4 ms**, p95 **3.3 ms**,
 p99 10.7 ms. The PRD target is p95 < 300 ms. Cold engine load 2.96 s; serving
-RSS 342 MB. Union retrieval queries both engines, so it costs p95 **128 ms** —
-35× the embedding-only path, still comfortably inside the target, and the one
-budget the default meaningfully spends.
+RSS **438 MB** for the shipped default (fasttext + union) against a 1.2 GB
+budget; 342 MB was skipgram alone, which stopped being the default in Sprint 8.
+Union retrieval queries both engines, so it costs p95 **128 ms** — 35× the
+embedding-only path and ~43 MB more resident, still comfortably inside both
+targets, and the one budget the default meaningfully spends.
 
 ### Against the predecessor project
 

@@ -21,6 +21,7 @@ from medsearch.embeddings.weighting import (
     principal_component,
     remove_component,
 )
+from medsearch.exceptions import EmptyCorpusError
 
 
 @pytest.fixture
@@ -65,7 +66,9 @@ class TestSifWeights:
         assert DEFAULT_SIF_A == 1e-3
 
     def test_empty_corpus_rejected(self) -> None:
-        with pytest.raises(ValueError, match="no tokens"):
+        # EmptyCorpusError since the audit: "loaded, but no usable text" is what
+        # the typed class exists for (Rules section 4).
+        with pytest.raises(EmptyCorpusError, match="no tokens"):
             SifWeights.from_corpus([[], []])
 
     def test_weights_for_returns_float32_array(self, corpus: list[list[str]]) -> None:

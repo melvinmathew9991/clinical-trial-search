@@ -28,7 +28,7 @@ from enum import Enum
 
 from medsearch.config import FieldName, ModelName, Settings
 from medsearch.data.loader import corpus_fingerprint
-from medsearch.embeddings.base import ModelKind
+from medsearch.embeddings.base import ModelKind, ModelMetadata
 from medsearch.embeddings.registry import is_trained, load_metadata
 from medsearch.logging_conf import get_logger
 from medsearch.search.index import DocumentIndex
@@ -134,6 +134,55 @@ def _check_index(
     return issues
 
 
+def _check_model(
+    settings: Settings,
+    model: ModelName,
+    metadata: ModelMetadata,
+    live_fingerprint: str,
+) -> list[IntegrityIssue]:
+    """Check one trained model against the live corpus and the budgets.
+
+    Covers the three ways a model can be present but wrong: trained on a
+    sample, trained on a corpus that has since changed, or larger than the
+    ADR-001 artefact budget. Index-level checks live in ``_check_index``.
+
+    Returns:
+        Findings for this model; empty when it is sound.
+    """
+    issues: list[IntegrityIssue] = []
+    if metadata.sampled:
+        issues.append(
+            IntegrityIssue(
+                Severity.WARN,
+                "model-sampled",
+                f"{model}: trained on a {metadata.corpus_documents:,}-document sample. "
+                f"Development artefact — not for production.",
+            )
+        )
+
+    base_fingerprint = metadata.corpus_fingerprint.split("-n")[0]
+    if base_fingerprint != live_fingerprint:
+        issues.append(
+            IntegrityIssue(
+                Severity.WARN,
+                "model-corpus-stale",
+                f"{model}: trained on corpus {base_fingerprint}, but data/raw now "
+                f"holds {live_fingerprint}. Retrain to pick up the new data.",
+            )
+        )
+
+    if metadata.artefact_mb > settings.max_artefact_mb:
+        issues.append(
+            IntegrityIssue(
+                Severity.WARN,
+                "artefact-oversized",
+                f"{model}: {metadata.artefact_mb:.0f} MB exceeds the "
+                f"{settings.max_artefact_mb} MB budget (ADR-001).",
+            )
+        )
+    return issues
+
+
 def check_artefacts(settings: Settings) -> list[IntegrityIssue]:
     """Verify every model and index against the live corpus.
 
@@ -174,36 +223,7 @@ def check_artefacts(settings: Settings) -> list[IntegrityIssue]:
 
         metadata = load_metadata(model_dir, ModelKind(model))
 
-        if metadata.sampled:
-            issues.append(
-                IntegrityIssue(
-                    Severity.WARN,
-                    "model-sampled",
-                    f"{model}: trained on a {metadata.corpus_documents:,}-document sample. "
-                    f"Development artefact — not for production.",
-                )
-            )
-
-        base_fingerprint = metadata.corpus_fingerprint.split("-n")[0]
-        if base_fingerprint != live_fingerprint:
-            issues.append(
-                IntegrityIssue(
-                    Severity.WARN,
-                    "model-corpus-stale",
-                    f"{model}: trained on corpus {base_fingerprint}, but data/raw now "
-                    f"holds {live_fingerprint}. Retrain to pick up the new data.",
-                )
-            )
-
-        if metadata.artefact_mb > settings.max_artefact_mb:
-            issues.append(
-                IntegrityIssue(
-                    Severity.WARN,
-                    "artefact-oversized",
-                    f"{model}: {metadata.artefact_mb:.0f} MB exceeds the "
-                    f"{settings.max_artefact_mb} MB budget (ADR-001).",
-                )
-            )
+        issues.extend(_check_model(settings, model, metadata, live_fingerprint))
 
         for field in ALL_FIELDS:
             issues.extend(

@@ -369,8 +369,14 @@ def load_union_retriever(
     from medsearch.search.engine import SearchEngine
     from medsearch.search.hybrid import UnionRetriever
 
-    engine = load_search_engine(settings, model, field, limit=limit)
-    corpus = load_corpus(settings.paths.corpus_file, limit=limit)
-    cache, _, _ = run_preprocessing(settings, field, limit=limit)
+    engine = cast("SearchEngine", load_search_engine(settings, model, field, limit=limit))
+
+    # Reuse the engine's corpus rather than loading a second copy: it costs
+    # ~35 MB, and an independent load with the caller's `limit` disagrees with
+    # the engine whenever the index is sampled -- pairing a 2,000-vector index
+    # with a 10,666-row TF-IDF matrix. Same mismatch class the index
+    # fingerprint guards against, one layer up.
+    effective_limit = limit if limit is not None else engine.sampled_limit
+    cache, _, _ = run_preprocessing(settings, field, limit=effective_limit)
     baseline = TfidfBaseline(cache)
-    return UnionRetriever(cast(SearchEngine, engine), baseline, corpus)
+    return UnionRetriever(engine, baseline, engine.corpus)

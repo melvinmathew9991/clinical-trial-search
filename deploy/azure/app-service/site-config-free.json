@@ -1,0 +1,80 @@
+{
+  "_comment": "App Service FREE (F1) deployment. Differs from site-config.json in one structural way: there is no storage mount, because artefacts are baked into the image (docker build --target standalone). Everything else here follows from documented F1 limits.",
+  "_measured_fit": {
+    "serving_rss_mb": 438,
+    "f1_memory_limit_mb": 1024,
+    "verdict": "Fits, with ~58% headroom. Measured fasttext+union, one isolated process.",
+    "artefacts_mb": 110,
+    "f1_storage_gb": 1,
+    "cold_start": "No Always On on F1, so the app unloads when idle and cold-starts on the next request: ~10 s to load the model and rebuild the TF-IDF matrix. Baking data/interim keeps this from becoming ~56 s.",
+    "cpu_budget": "60 CPU-minutes/day and 3 minutes per 5. A cold start is ~10 CPU-seconds, a query ~0.13 s. The budget is real but generous for demo traffic; it is the reason not to put a crawler or a load test on this."
+  },
+  "name": "medsearch-app-free",
+  "kind": "app,linux,container",
+  "identity": {
+    "type": "SystemAssigned"
+  },
+  "properties": {
+    "siteConfig": {
+      "linuxFxVersion": "DOCKER|ghcr.io/OWNER/clinical-trial-search:standalone",
+      "_alwaysOn_comment": "Must stay false. F1 does not support Always On; setting it true fails the deployment.",
+      "alwaysOn": false,
+      "healthCheckPath": "/_stcore/health",
+      "ftpsState": "Disabled",
+      "minTlsVersion": "1.2",
+      "http20Enabled": true,
+      "_no_storage_comment": "Deliberately no azureStorageAccounts. Artefacts are in the image, so the app has no external dependency and no storage account to pay for.",
+      "appSettings": [
+        {
+          "name": "WEBSITES_PORT",
+          "value": "8501"
+        },
+        {
+          "_comment": "F1 is slow to pull a ~1.5 GB image on first start. 300 s is not padding.",
+          "name": "WEBSITES_CONTAINER_START_TIME_LIMIT",
+          "value": "300"
+        },
+        {
+          "name": "MEDSEARCH_LOG_LEVEL",
+          "value": "INFO"
+        },
+        {
+          "name": "MEDSEARCH_LOG_JSON",
+          "value": "true"
+        },
+        {
+          "_comment": "Baked-in paths, matching the standalone target's COPY destinations.",
+          "name": "MEDSEARCH_DATA_DIR",
+          "value": "/home/app/data"
+        },
+        {
+          "name": "MEDSEARCH_MODEL_DIR",
+          "value": "/home/app/models"
+        },
+        {
+          "_comment": "One shared core on F1. Threads past the first only add contention (ADR-008).",
+          "name": "OMP_NUM_THREADS",
+          "value": "1"
+        },
+        {
+          "name": "MKL_NUM_THREADS",
+          "value": "1"
+        },
+        {
+          "name": "OPENBLAS_NUM_THREADS",
+          "value": "1"
+        },
+        {
+          "_comment": "Skips the memory floor's training budget: this container only serves.",
+          "name": "MEDSEARCH_MIN_FREE_MEMORY_GB",
+          "value": "0.5"
+        }
+      ]
+    }
+  },
+  "sku": {
+    "_comment": "F1 Free: 1 GB memory per plan, 1 GB storage, 60 CPU-min/day, 1 shared instance, no Always On, no custom domain or TLS beyond *.azurewebsites.net.",
+    "name": "F1",
+    "tier": "Free"
+  }
+}

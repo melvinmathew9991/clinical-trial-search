@@ -68,3 +68,7 @@ nltk_data/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# The legacy reference is committed (reference/legacy/) but its bytecode is not.
+reference/**/__pycache__/
+reference/**/*.py[cod]

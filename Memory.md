@@ -44,7 +44,7 @@ Bare `mypy` outside `.venv` will not resolve gensim/typer/pandas.
 
 Environment is now real: `.venv` with gensim 4.4.0, numpy 1.26.4, pandas 2.3.3,
 streamlit 1.62.0, typer 0.27.1, NLTK corpora present. Corpus copied to
-`data/raw/dimension-covid.csv` (`Part_1` left intact, `--copy` not `--move`).
+`data/raw/dimension-covid.csv` (`reference/legacy/modular-code` left intact, `--copy` not `--move`).
 
 **FULL CORPUS, measured 2026-08-27** (10,666 documents). Architecture §9 holds
 the complete table; headline numbers:
@@ -82,7 +82,7 @@ OOV and stopword-only queries degrade gracefully with distinct reasons. No NaN.
 | Claim | Status |
 |-------|--------|
 | All modules compile (`compileall`) | ✅ verified |
-| Fast suite stays under the 30 s budget | ✅ verified — 326 tests in 11.6 s |
+| Fast suite stays under the 30 s budget | ✅ verified — **421 tests in 13 s** |
 | `Settings.effective_workers` → 3 on this 4-core box | ✅ verified |
 | Bucket arithmetic: default = 800,000,000 bytes | ✅ verified in test + at runtime |
 | `l2_normalize` produces no NaN on zero rows | ✅ verified |
@@ -98,20 +98,21 @@ OOV and stopword-only queries degrade gracefully with distinct reasons. No NaN.
 | CLI rejects an invalid `--model` / `--field` | ✅ verified |
 | Architecture.md §9 full-corpus figures | ✅ **MEASURED** — estimates replaced 2026-08-27 |
 | Full 10,666-document pipeline runs on the dev laptop | ✅ verified — 2 min 22 s, ~350 MB peak |
-| PRD G2 query latency p95 < 300 ms | ✅ verified — **3.3 ms** over 120 queries |
+| Serving RSS ≤ 1.2 GB | ✅ verified — **438 MB** for fasttext + union; 342 MB was skipgram alone |
+| PRD G2 query latency p95 < 300 ms | ✅ verified — 3.3 ms embedding-only, **128 ms for the shipped union** |
 | PRD G4 full corpus indexed (10,666/10,666) | ✅ verified, `sampled: false` in metadata |
-| Recall@10 ≥ 0.70 | ❌ **MEASURED, NOT MET** — 0.485 at n=97 |
+| Recall@10 ≥ 0.70 | ✅ **MET — 0.955** via union retrieval. Was ❌ 0.485 for the embeddings alone |
 | Embeddings beat TF-IDF | ❌ **REFUTED** — TF-IDF 0.648 vs 0.485, p=0.0003, survives Bonferroni |
-| FastText beats Skip-gram | ❌ **NO DIFFERENCE** — p=0.28/0.86/1.00 |
+| FastText beats Skip-gram | ⚠️ **Depends on the budget.** ❌ standalone (p=0.28/0.86/1.00); ✅ under the union (+0.028, p=0.019) — hence the default |
 | SIF weighting closes the gap | ❌ **REFUTED** — no gain for skipgram, significantly worse for fasttext |
 | Rank fusion closes the gap | ❌ **REFUTED** — RRF = +0.0005, p=0.98 |
 | Embeddings find docs TF-IDF misses | ✅ **CONFIRMED** — 66% of their hits are unique; union@20 = 0.955 |
-| MRR@10 ≥ 0.45 | ✅ measured — 0.787 (TF-IDF: 0.939) |
-| Coverage gate (80%) on the full suite | ✅ verified — **92.21%** |
-| 360 tests pass (326 fast + 34 integration) | ✅ verified |
-| A search performed *through the UI* | ❌ server + engine path verified; no browser interaction driven |
-| Docker image builds | ❌ never built |
-| Azure pipeline deploys | ❌ never deployed |
+| MRR@10 ≥ 0.45 | ✅ measured — **0.852** union / 0.757 skipgram / 0.888 TF-IDF |
+| Coverage gate (80%) on the full suite | ✅ verified — **87.47%**, down from 92.21%: Sprint 8 added code faster than tests |
+| 457 tests pass (421 fast + 36 integration) | ✅ verified |
+| A search performed *through the UI* | ⚠️ app serves (HTTP 200 on `/_stcore/health`, page renders, 11 KB body) and the engine path is tested; **no browser interaction has ever been driven** |
+| Docker image builds | ❌ **never built** — `docker` is not installed on the dev machine, so Sprint 9's DoD cannot be verified here at all |
+| Azure pipeline deploys | ❌ **never deployed** — and pre-deployment review found the App Service config mounted no artefacts, so the first deploy would have served zero results |
 
 ### Track 0 — three defects found by actually running it
 
@@ -131,8 +132,8 @@ Six regression tests added. **43 pass.**
 ### Environment facts (verified 2026-08-27)
 - **Dev machine:** Intel i5-7300HQ · 4 physical / **4 logical cores** · **7.89 GB RAM** (~1.07 GB free at profiling time) · `D:` has 164 GB free, `C:` has 34.7 GB free
 - **Python:** 3.10.11 at the system level
-- **Repo root:** `D:\Word2Vec and FastText Word Embedding with Gensim in Python\medical-embeddings-search`
-- **Legacy reference (frozen, do not edit):** `..\Part_1\`, `..\Part_2\`
+- **Repo root:** `D:\Word2Vec and FastText Word Embedding with Gensim in Python\clinical-trial-search`
+- **Legacy reference (frozen, do not edit):** `reference/legacy/` — inside the repo since the restructure, so the citations in the docs and `test_regressions.py` actually resolve for anyone who clones. Was `..\Part_1\` and `..\Part_2\`, outside the repo and invisible to everyone but me.
 - Because there are only 4 threads, `workers` is **3** everywhere. Because RAM is 8 GB, artefacts are bounded and the pipeline streams.
 
 ### Key decisions already made — do not relitigate
@@ -142,7 +143,7 @@ Six regression tests added. **43 pass.**
 4. Serve `KeyedVectors`, not full models. (ADR-006)
 5. `--limit` defaults to `None` — the legacy hidden `.iloc[:100]` is gone. (ADR-007)
 6. `data/` and `models/` are gitignored; artefacts are regenerated, not committed.
-7. Legacy `Part_1`/`Part_2` stay untouched as reference until the user verifies and deletes them.
+7. Legacy `reference/legacy/modular-code`/`reference/legacy/azure-pipeline` stay untouched as reference until the user verifies and deletes them.
 
 ---
 
@@ -806,3 +807,138 @@ default shipped. Run the user-facing command and read what it prints. Third
 finding in this project of the same shape — the code was fine, the *claim about
 the code* was wrong (cf. the stale README Precision@1 column, and the eval
 report that had never been regenerated).
+
+### Post-Sprint-8 audit — what a full-repo review turned up
+
+Ran an audit across structure, standards, complexity, and error handling
+rather than trusting the docs' own claims. Four things were wrong.
+
+**1. The union loaded the corpus twice — and could load the *wrong* one.**
+`load_union_retriever` called `load_search_engine` (which loads a corpus
+aligned to the index) and then `load_corpus` again with the caller's raw
+`limit`. Two 35 MB frames, and worse: with a **sampled** index and `limit=None`
+the engine holds 2,000 rows while the second load returns all 10,666 — a
+2,000-vector index paired with a 10,666-document TF-IDF matrix. Same mismatch
+class the index fingerprint exists to catch, one layer up, and no test covered
+it because every test uses a full index. Fixed by exposing `SearchEngine.corpus`
+and `.sampled_limit` and deriving both sides from the engine.
+
+**2. Serving RSS was documented at 342 MB; the shipped default is 438 MB.**
+Measured one isolated process per configuration:
+
+| Model | Embedding only | With union |
+|---|---|---|
+| skipgram | 359 MB | 402 MB |
+| **fasttext** | 395 MB | **438 MB** |
+
+The 342 MB was skipgram alone — accurate when written, stale the moment
+Sprint 8.4 made fasttext + union the default. Headroom against the 1.2 GB
+budget is 2.7x, not 3.5x. *My first measurement said 539 MB; that was two
+engines alive in one process because `del` does not return allocator pages.
+One process per configuration, or the number is fiction.*
+
+**3. Two functions are over the 60-line hard cap in Rules §3** — `doctor` (69)
+and `check_artefacts` (61), with eight more over the soft cap. **No gate
+enforced the cap**, which is why it drifted for eleven sprints unnoticed.
+
+*I first reported this as **nine** over the hard cap.* That count charged
+blank and comment lines against the cap; in a codebase that comments as
+densely as this one, that inflates every function by a third. Writing the
+checker forced the counting rule to be stated — body lines only, docstrings
+and blanks and comments excluded — and the real number fell to two. **The
+lesson is the one this project keeps relearning: a number nobody can
+reproduce is not a measurement.** Had I "fixed" nine functions on the first
+count, seven of those refactors would have been churn against a rule that
+was never broken.
+
+**4. The notebook was never stripped.** Architecture.md §503's migration row
+says "move, rename, **strip outputs**". Only move and rename happened:
+`notebooks/01-exploration.ipynb` is byte-identical to the legacy file, 23 of
+69 cells carry 2021 execution output, and it is committed that way —
+violating Rules §6's "never commit a notebook with outputs".
+
+**Smaller findings:** ten `src` modules have no matching
+`tests/unit/test_<module>.py` despite Rules §5; `engine.py` raises a bare
+`ValueError` for a dim mismatch where `ArtefactMismatchError` exists, and
+`weighting.py` does the same where `EmptyCorpusError` does; `make clean`
+misses `.import_linter_cache` and `src/medsearch.egg-info`.
+
+**What the audit did *not* find, which is the more useful half:** no
+`Optional[X]`/`List[X]`, no commented-out code, no TODO/FIXME, all twelve
+exception classes actually raised, zero-norm guards present in all three
+places that divide, the layer contract clean, and the fast suite at 13 s
+against a 30 s budget. The standards hold almost everywhere; the gaps are
+where **nothing automated was watching**.
+
+### Audit remediation — all four findings closed
+
+**Union corpus duplication fixed.** `SearchEngine` now exposes `corpus` and
+`sampled_limit`; `load_union_retriever` derives both retrievers from the engine
+instead of re-loading. Serving RSS 438 → 402 MB for skipgram, and the sampled-
+index mismatch is structurally impossible now rather than merely untested.
+
+**Docs reconciled with measurement.** Architecture §9 and the README carry the
+per-configuration serving table; the Memory verification table's seven stale
+rows are corrected and a serving-RSS row added.
+
+**Notebook stripped.** 590 KB → 23 KB, 69 cells intact, 0 outputs. Closes
+Rules §6 and the migration step Architecture §503 specified in Sprint 2.
+
+**Function-length cap now enforced.** `scripts/check_function_length.py`, wired
+into `make lengths`, `make check`, pre-commit, and CI, with 10 tests pinning
+the counting rule and one that asserts the whole of `src/medsearch` stays
+inside the hard cap. `doctor` split into `_check_resources` + `_report_artefacts`
+(69 → 27); `check_artefacts` split into `_check_model` (61 → 30).
+
+**Worth remembering:** three of the four findings were invisible to every
+existing gate — ruff, mypy --strict, import-linter and 457 tests were all green
+while the corpus loaded twice, the docs misstated RSS by 100 MB, and a
+committed notebook carried 2021 output. **Gates catch what they were written to
+catch.** The remaining known gaps are the two untyped `ValueError`s that should
+be `ArtefactMismatchError` / `EmptyCorpusError`, ten modules without a matching
+`test_<module>.py`, and `make clean` missing two cache dirs.
+
+### Pre-deployment review — two defects only a deployment would have found
+
+Asked whether every perspective was ready to ship. It was not, and the two
+worst findings were both in Sprint 9/10 code that has never been executed.
+
+**1. App Service mounted no artefacts.** `site-config.json` set
+`AZURE_STORAGE_ACCOUNT_URL` and `AZURE_BLOB_CONTAINER` — and **nothing in
+`src/medsearch` reads either one.** The only mentions of blob storage in the
+package are comments. There was no `azureStorageAccounts` mount and no
+`MEDSEARCH_DATA_DIR`/`MEDSEARCH_MODEL_DIR` either. Deployed as written the
+container starts, **passes its health check**, and returns zero results for
+every query — because `/_stcore/health` proves Streamlit is up, not that a
+model is loaded. *A health check that cannot fail the way the system actually
+fails is decoration.*
+
+**2. The Streamlit app never honoured `MEDSEARCH_LOG_JSON`.** App Service sets
+it true. The CLI passes `json_output=settings.log_json`; the app called
+`configure_logging(settings.log_level)` at both call sites. And because
+`configure_logging` latches on first call, no later caller could correct it —
+production logs would have been plain text, unparseable by the pipeline, with
+no error anywhere. Found by writing the *first ever* test for
+`logging_conf.py`.
+
+**3. Three descriptions of the storage layout, none agreeing.**
+`run_training.py` writes `$mount/data` + `$mount/models`; `deploy/README.md`
+documented a top-level `index/` prefix nothing writes or reads; App Service
+described neither. Nothing forced them to agree because nothing ever ran end
+to end.
+
+**The pattern, stated plainly:** every one of these lived in the half of the
+repo that has never executed. Sprint 9 is marked ✅ *(written, never built)*
+and Sprint 10 🟨 *(config written, never deployed)* — honest labels, and this
+is what they cost. Code that has not run is not "done"; it is a hypothesis.
+
+**Still genuinely blocked, and not by anything I can fix:**
+- **Docker is not installed on this machine.** Sprint 9's DoD ("image builds")
+  is unverifiable here. The Dockerfile reads well — multi-stage, non-root uid
+  10001, pinned BLAS threads, healthcheck — and `python -m medsearch.runtime
+  --download-nltk` does exist, so the build step is at least real. But
+  "reads well" is exactly the standard that produced the three defects above.
+- **Azure has never been deployed.** Needs a subscription and the managed
+  identity role assignments in `deploy/README.md` section 3.
+- **No browser has ever driven the UI.** The app serves and the engine path is
+  tested; the widget layer is not.

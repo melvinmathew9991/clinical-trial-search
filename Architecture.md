@@ -74,7 +74,7 @@ everything" shape.
 ## 3. Folder structure
 
 ```
-medical-embeddings-search/
+clinical-trial-search/
 ├── PRD.md                      # what & why
 ├── Architecture.md             # this file — how
 ├── Rules.md                    # engineering boundaries
@@ -213,7 +213,7 @@ cannot compute.
 
 | Kind | Convention | Example |
 |------|-----------|---------|
-| Repository | `kebab-case` | `medical-embeddings-search` |
+| Repository | `kebab-case` | `clinical-trial-search` |
 | Python package / module | `snake_case`, singular unless a collection | `document.py`, `embeddings/` |
 | Class | `PascalCase` | `DocumentIndex`, `SearchEngine` |
 | Function / variable | `snake_case`, verb-first for functions | `build_index()`, `corpus_fingerprint()` |
@@ -230,7 +230,7 @@ cannot compute.
 `Modular+Code/` (`+` in a path), `Ipython Notebook/` (spaces), `Medical Embeddings_Final.ipynb`
 (spaces + mixed case), `K`/`K1`/`K11`/`KK`/`p`/`x`/`tmp`/`res`/`L` as variable names,
 and any name that differs from another only by case (`FastText-vec.csv` vs `Fasttext-vec.csv`
-— a real Part 1 bug that broke on Linux).
+— a real reference/legacy/modular-code bug that broke on Linux).
 
 ## 5. Tech stack
 
@@ -400,7 +400,8 @@ this section previously carried.
 | `train_fasttext` | 56.0 s | 346 MB | **29.3 MB** |
 | `build_index` (each) | ~7 s | 152 MB | **4.1 MB** |
 | **Full `make train`** | **2 min 22 s** | **≤ 350 MB** | 59 MB total |
-| Serving (engine + index + model) | 2.96 s cold load | **342 MB** | — |
+| Serving, skipgram, embedding only | 2.96 s cold load | **342 MB** | — |
+| Serving, **fasttext + union (ships)** | TF-IDF build at load | **438 MB** | — |
 
 Vocabulary: 24,897 words. Out-of-vocabulary documents: **2 of 10,666 (0.02%)**.
 
@@ -409,7 +410,7 @@ Vocabulary: 24,897 words. Out-of-vocabulary documents: **2 of 10,666 (0.02%)**.
 | Target | Budget | Measured | |
 |--------|--------|----------|---|
 | Full pipeline peak RSS | ≤ 2.5 GB | **~350 MB** | 7x headroom |
-| Serving RSS | ≤ 1.2 GB | **342 MB** | 3.5x headroom |
+| Serving RSS | ≤ 1.2 GB | **438 MB** (shipped default) | 2.7x headroom |
 | Training wall time | ≤ 15 min | **2 min 22 s** | 6x faster |
 | Any single artefact | ≤ 150 MB | **29.3 MB** | 5x headroom |
 | `data/` + `models/` total | ≤ 1.5 GB | **59 MB** | 25x headroom |
@@ -419,6 +420,20 @@ Latency measured over 120 queries after warm-up: p50 1.4 ms, p95 3.3 ms,
 p99 10.7 ms, max 35.8 ms. That is ADR-003 -- one BLAS matrix-vector product
 against a pre-normalised index -- rather than the legacy per-document Python
 loop.
+
+**Serving RSS by configuration**, one isolated process each, measured after a
+warm-up query:
+
+| Model | Embedding only | With union |
+|---|---|---|
+| skipgram | 359 MB | 402 MB |
+| **fasttext** | 395 MB | **438 MB** |
+
+The union adds a flat **~43 MB** -- the TF-IDF matrix (4.5 MB sparse) plus its
+40,012-term vocabulary. FastText costs a further ~36 MB over Skip-gram for its
+larger `.kv`. The 342 MB in the table above was measured on skipgram alone,
+which stopped being the default in Sprint 8.4; it is kept as the historical
+figure the earlier budget was checked against.
 
 **Union retrieval costs 35x that and is still inside budget.** The shipped
 default queries both retrievers, so each search adds a sparse matrix product
@@ -494,6 +509,10 @@ resolves a Blob URL via `DefaultAzureCredential` at startup.
 
 `scripts/migrate_legacy.py` performs the one-shot move (idempotent, dry-run by default):
 
+> The left column is the **original** layout, kept as the record of what moved where.
+> What survived now lives in [`reference/legacy/`](./reference/legacy/README.md); the
+> generated outputs were discarded once the migration was verified.
+
 | Legacy | New | Action |
 |--------|-----|--------|
 | `Part_1/Data/Data/Dimension-covid.csv` | `data/raw/dimension-covid.csv` | move, rename |
@@ -501,7 +520,7 @@ resolves a Blob URL via `DefaultAzureCredential` at startup.
 | `Part_1/.../output/*.npy` (800 MB) | — | **discard** — superseded by bounded bucket |
 | `Part_1/.../output/*-vec-*.csv` | — | **discard** — rebuilt as `.npy` (ADR-002) |
 | `Part_1/Ipython Notebook/*.ipynb` | `notebooks/01-exploration.ipynb` | move, rename, strip outputs |
-| `Part_1/src/ML_pipeline/*.py` | `src/medsearch/**` | rewritten, not copied |
+| `reference/legacy/modular-code/src/ML_pipeline/*.py` | `src/medsearch/**` | rewritten, not copied |
 | `Part_2/.../src/*.py` | `src/medsearch/**` + `deploy/` | rewritten; SAS tokens removed |
 | `Part_2/.../{pipeline,trigger,linkedService}/*.json` | `deploy/azure/data-factory/**` | rewritten with managed identity |
 

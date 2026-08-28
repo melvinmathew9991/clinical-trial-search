@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "medsearch"
-version = "0.5.0"
+version = "0.8.0"
 description = "Semantic search over COVID-19 clinical trials using in-domain Word2Vec and FastText embeddings"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -40,8 +40,13 @@ dev = [
     "mypy>=1.10",
     "import-linter>=2.0",
     "pre-commit>=3.7",
-    "pandas-stubs",
-    "types-psutil",
+    # Pinned deliberately. Type stubs are not implementation -- a stub release
+    # can change what mypy --strict concludes about unchanged source. Leaving
+    # these floating made CI fail on 3.11/3.12 while passing locally on 3.10,
+    # because Series.tolist() resolves to a different overload between
+    # pandas-stubs releases. Bump these on purpose, never incidentally.
+    "pandas-stubs==2.3.3.260113",
+    "types-psutil==7.2.2.20260518",
 ]
 
 [project.scripts]
