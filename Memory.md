@@ -12,7 +12,7 @@
 |---|---|
 | **Version** | `v0.10.0` + Tracks 0, 1, 2 + the domain-audit remediation (unreleased) |
 | **Done** | Sprints 0–7, 9, 10, 11 (bar the tag) · Tracks 0, 1, 2 · Sprint 8 **including two rounds of relevance judging** |
-| **Not done** | `v1.0.0` tag · the clean-clone DoD run · an independent clinician review of the judgements · **Sprint 9's image-size DoD (941 MB against < 800 MB)** · an actual Azure deploy · a search driven through the UI in a browser · free-standing negation (needs a query parser, not a token list) · indexing the `Trial ID` column |
+| **Not done** | `v1.0.0` tag (**recommend `v0.11.0` instead** — see Phases §11) · an independent clinician review of the judgements · **Sprint 9's image-size DoD (941 MB against < 800 MB)** · an actual Azure deploy · a search driven through the UI in a browser · free-standing negation (needs a query parser, not a token list) · indexing the `Trial ID` column |
 | **Branch** | `fix/domain-audit-remediation`, clean tree, in sync with `origin`. **16 commits ahead of `main`, which still sits at the Sprint 0 scaffolding commit — nothing has been merged back.** Tags run to `v0.9.0`. |
 | **Next action** | **A product decision — open, and round 3 sharpened it.** Re-judging cut the union's margin to **0.702-vs-0.459**, nDCG@10 puts the lexical baselines *ahead* (0.799 vs 0.746), and on known-item code queries the union **halves P@1** (0.500 vs 1.000) because the embedding half contributes a document that cannot be relevant. Decide whether the 17.8-document union still ships by default. See [EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) §§7–8 and PRD §8.4. |
 | **Note** | Full-corpus training takes 2 min 22 s at ~350 MB peak. Databricks is no longer *required* for it, though still the right home for scheduled retraining. |
@@ -112,7 +112,8 @@ OOV and stopword-only queries degrade gracefully with distinct reasons. No NaN.
 | pre-commit, all 14 hooks | ✅ verified — blocked three bad commits so far |
 | CLI rejects an invalid `--model` / `--field` | ✅ verified |
 | Architecture.md §9 full-corpus figures | ✅ **MEASURED** — estimates replaced 2026-08-27 |
-| Full 10,666-document pipeline runs on the dev laptop | ✅ verified — 2 min 22 s, ~350 MB peak |
+| Full 10,666-document pipeline runs on the dev laptop | ✅ verified — **2 min 2 s, 353 MB peak, re-measured 2026-08-29 from a clean clone** |
+| A clean clone reaches a working app | ✅ **verified 2026-08-29** — install 3m44s, train, index, CLI search, Streamlit HTTP 200. Four defects, all in the clone-to-corpus path, none in the code |
 | Serving RSS ≤ 1.2 GB | ✅ verified — **438 MB** for fasttext + union; 342 MB was skipgram alone |
 | PRD G2 query latency p95 < 300 ms | ✅ verified — 3.3 ms embedding-only, **128 ms for the shipped union** |
 | PRD G4 full corpus indexed (10,666/10,666) | ✅ verified, `sampled: false` in metadata |
@@ -1384,3 +1385,79 @@ operator that subtracts) stands, and my proposed revision of it was wrong.
 **Process note:** the cost of being wrong here was one script and twenty
 minutes, because the harness to measure it already existed from round 3. That
 is the argument for building the measurement before the fix, not after.
+
+
+---
+
+### 2026-08-29 — Session 6 · The clean-clone run: the pipeline passes, the on-ramp does not
+
+**Status: done.** Sprint 11's last untested claim — that someone can go from
+`git clone` to a working app — was finally tested, from a fresh clone of
+GitHub rather than the working tree.
+
+**The pipeline is fine.** Nothing in the code was broken. Install 3 min 44 s,
+NLTK 14.5 s, full-corpus training 2 min 2 s at 353 MB peak, index build 16.9 s,
+CLI search returning respiratory-failure trials, Streamlit serving HTTP 200
+with an 11 KB body. `doctor` was correct in both directions — exit 1 while the
+corpus was missing and RAM was short, exit 0 once both were satisfied.
+
+**The dependency ranges resolved safely, and that is luck.** Only numpy is
+capped (`<2.0`); gensim, pandas, scipy and streamlit are all open-ended
+`>=`. A fresh resolve today gave gensim 4.4.0 / scipy 1.15.3 / pandas 2.3.3 —
+identical to the dev venv. It could as easily not have: gensim has a history of
+breaking against newer scipy. Worth pinning before anyone else clones this.
+
+**Four defects, all between clone and corpus, none in the code:**
+
+1. **`make` is not installed on the reference machine.** Sprint 11's DoD is
+   written as `make setup && make doctor && make train && make app` and
+   therefore cannot pass on the laptop it names. The README's no-make fallback
+   is what actually works.
+2. **"With no manual steps" is unachievable by construction.** The 29 MB corpus
+   is gitignored, correctly, so a clean clone has no data and must have a
+   manual acquisition step. The DoD needs rewording; the repo is right.
+3. **`doctor`'s remediation points at a dead end.** It says "Run `make data`" —
+   but `make` is absent, *and* `migrate_legacy.py` resolves its legacy root to
+   the clone's parent and looks for `../Part_1/Data/Data/Dimension-covid.csv`,
+   a layout that exists only on the original machine. It should point at the
+   figshare link in README §Data.
+4. **The README's no-make fallback omits the data step**, so a Windows user
+   goes `doctor` → `train` and meets the missing corpus with no guidance inside
+   the path they were following.
+
+**The figures in Architecture §9 were stale and are now corrected.** They were
+measured 2026-08-27, *before* the tokeniser fix. Preserving alphanumeric
+identity keeps `sarscov2`, `il6` and `cd4` as distinct tokens, so:
+
+| | 2026-08-27 (old chain) | 2026-08-29 (current) |
+|---|---|---|
+| Vocabulary | 24,897 | **31,189** (+25 %) |
+| skipgram artefact | 10.2 MB | 12.8 MB |
+| fasttext artefact | 29.3 MB | 31.9 MB |
+| Full training | 2 min 22 s | 2 min 2 s |
+
+That is the cost side of the retrieval gain in EVALUATION_AUDIT.md §8, and it
+had never been written down. Both artefacts stay far inside the 150 MB cap.
+
+**A near-miss worth recording.** The first clone went into the session
+scratchpad and pip failed with `OSError [Errno 2]` while unpacking
+`numpy.libs` — the path exceeded Windows' 260-character `MAX_PATH`. That was my
+directory choice, not a project defect, but on a Windows-targeted project it is
+worth telling users to clone somewhere short.
+
+**Also checked, and *not* a regression:** `lung failure` returns a *renal*
+failure trial at rank 1. The gap to rank 2 is 0.0303 vs 0.0301, against ±0.010
+documented run-to-run variance from non-deterministic multi-worker training —
+so the ordering is noise. The underlying mean-pooling weakness on the shared
+token `failure` is real, already documented, and is exactly what §8's entity
+stratum measured.
+
+**On `v1.0.0`: recommended against, for now.** A `1.0.0` tag asserts stability,
+and this project currently documents an unmet image-size DoD, no deployment, no
+browser-driven search, judgements 42 % model-generated with no clinician
+review, and a flaky guard test. Tagging that would assert what the measurements
+do not support. `v0.11.0` marks the work without the claim; `release.yml` can
+be exercised via `workflow_dispatch` without any tag at all.
+
+**Next action:** unchanged — the union-vs-lexical product decision. Then, if
+the four on-ramp defects are worth fixing, they are a half-hour of work each.
