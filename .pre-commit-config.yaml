@@ -1,0 +1,52 @@
+# Run `pre-commit install` once (or `make hooks`).
+# Rules.md section 6: never bypass with --no-verify.
+
+default_language_version:
+  python: python3.11
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict      # catches FastText-vec vs Fasttext-vec
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-added-large-files
+        args: [--maxkb=5120]         # artefacts belong in data/ and models/
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.7
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.1
+    hooks:
+      - id: mypy
+        files: ^src/medsearch/
+        additional_dependencies: [pydantic, pydantic-settings, types-psutil]
+
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.7.1
+    hooks:
+      - id: nbstripout            # notebooks are committed without outputs
+
+  - repo: local
+    hooks:
+      - id: no-azure-sas-tokens
+        name: block Azure SAS tokens and account keys
+        entry: >-
+          bash -c 'if grep -rInE "sig=[A-Za-z0-9%+/]{20,}|sp=r[acwdlmeop]{2,}&|AccountKey=" "$@"; then
+          echo "Credential detected. See Rules.md section 0 rule 3."; exit 1; fi' --
+        language: system
+        types: [text]
+        exclude: ^\.pre-commit-config\.yaml$|^\.github/workflows/ci\.yml$

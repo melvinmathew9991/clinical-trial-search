@@ -1,0 +1,27 @@
+# Streamlit runtime configuration.
+#
+# The watcher setting is the important one on a 4-core / 8 GB laptop: the
+# default watcher polls the entire working tree, which here includes the
+# data/ and models/ directories. On the legacy layout that meant polling an
+# 800 MB artefact continuously, burning CPU for nothing.
+
+[server]
+fileWatcherType = "none"
+headless = true
+port = 8501
+maxUploadSize = 5
+enableStaticServing = false
+
+[browser]
+gatherUsageStats = false
+
+[runner]
+fastReruns = true
+magicEnabled = false
+
+[theme]
+base = "light"
+primaryColor = "#0F766E"
+
+[logger]
+level = "warning"

@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------- artefacts
+# Decision (Memory.md, Sprint 0): data and models are REGENERATED, not committed.
+# Rebuild with:  make data && make train
+data/raw/*
+data/interim/*
+data/processed/*
+models/*
+reports/*
+!**/.gitkeep
+
+# Never, under any circumstances
+*.bin
+*.npy
+*.kv
+*.kv.vectors_ngrams.npy
+*.model
+*.pkl
+*.pickle
+
+# ---------------------------------------------------------------- secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*_credentials.json
+.azure/
+secrets.toml
+.streamlit/secrets.toml
+
+# ---------------------------------------------------------------- python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+venv/
+.venv/
+env/
+ENV/
+
+# ---------------------------------------------------------------- tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# ---------------------------------------------------------------- notebooks
+.ipynb_checkpoints/
+*-checkpoint.ipynb
+
+# ---------------------------------------------------------------- nltk
+nltk_data/
+
+# ---------------------------------------------------------------- editors / os
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

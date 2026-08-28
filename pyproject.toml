@@ -1,0 +1,152 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medsearch"
+version = "0.5.0"
+description = "Semantic search over COVID-19 clinical trials using in-domain Word2Vec and FastText embeddings"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "Melvin Mathew" }]
+keywords = ["nlp", "word2vec", "fasttext", "embeddings", "search", "clinical-trials"]
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "gensim>=4.3.0",
+    "numpy>=1.24,<2.0",
+    "pandas>=2.1",
+    "nltk>=3.8",
+    "typer>=0.12",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+app = ["streamlit>=1.30"]
+viz = ["scikit-learn>=1.3", "matplotlib>=3.7", "wordcloud>=1.9"]
+azure = ["azure-storage-blob>=12.19", "azure-identity>=1.15"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "import-linter>=2.0",
+    "pre-commit>=3.7",
+    "pandas-stubs",
+    "types-psutil",
+]
+
+[project.scripts]
+medsearch = "medsearch.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+medsearch = ["py.typed"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort
+    "N",         # pep8-naming  -> blocks K1/KK style names at the API level
+    "UP",        # pyupgrade    -> enforces `X | None` over Optional
+    "B",         # bugbear
+    "A",         # builtin shadowing
+    "C4",        # comprehensions
+    "SIM",       # simplify
+    "PTH",       # flake8-use-pathlib -> bans os.path joins (Rules 1)
+    "RET",       # return consistency
+    "ARG",       # unused arguments
+    "PD",        # pandas-vet   -> flags chained assignment, the legacy bug
+    "NPY",       # numpy-specific
+    "RUF",
+]
+ignore = [
+    "E501",    # line length handled by the formatter
+    "PD901",   # `df` is an acceptable name in loader/schema modules
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ARG", "PD", "N802"]
+"src/medsearch/app/**" = ["PD"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.10"
+files = ["src/medsearch"]
+strict = true
+warn_unreachable = true
+show_error_codes = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["gensim.*", "nltk.*", "streamlit.*", "wordcloud.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "-q",
+    "--strict-markers",
+    "--cov=medsearch",
+    "--cov-report=term-missing",
+    "--cov-fail-under=80",
+    "-m", "not slow",
+]
+markers = [
+    "slow: excluded from the default run (full-corpus / training tests)",
+    "integration: crosses module boundaries",
+]
+
+[tool.coverage.run]
+source = ["src/medsearch"]
+omit = ["*/app/*", "*/__init__.py"]
+
+# ---------------------------------------------------------------- import-linter
+# Enforces the layer model in Architecture.md section 2.
+# A violation fails CI. This is what stops the codebase collapsing back into
+# the legacy "everything imports everything" shape.
+[tool.importlinter]
+root_package = "medsearch"
+
+[[tool.importlinter.contracts]]
+name = "Layers are strictly ordered"
+type = "layers"
+layers = [
+    "medsearch.app | medsearch.cli | medsearch.pipelines",
+    "medsearch.search",
+    "medsearch.embeddings",
+    "medsearch.preprocessing | medsearch.data",
+    "medsearch.config | medsearch.runtime | medsearch.logging_conf | medsearch.exceptions",
+]
+
+[[tool.importlinter.contracts]]
+name = "Foundation layer stays dependency-free"
+type = "forbidden"
+source_modules = ["medsearch.config", "medsearch.exceptions", "medsearch.runtime"]
+forbidden_modules = [
+    "medsearch.data",
+    "medsearch.preprocessing",
+    "medsearch.embeddings",
+    "medsearch.search",
+    "medsearch.app",
+]
