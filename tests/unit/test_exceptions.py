@@ -100,6 +100,11 @@ class TestMessages:
         message = str(CorpusNotFoundError(Path("data/raw/missing.csv")))
         assert "run `make data`" not in message
 
+    def test_corpus_not_found_names_where_to_get_it(self) -> None:
+        """Saying "place the export here" assumes the reader has the export."""
+        message = str(CorpusNotFoundError(Path("data/raw/missing.csv")))
+        assert "dimensions.figshare.com" in message
+
     def test_artefact_mismatch_shows_both_sides(self) -> None:
         message = str(ArtefactMismatchError(expected="model-abc", actual="index-xyz"))
         assert "model-abc" in message

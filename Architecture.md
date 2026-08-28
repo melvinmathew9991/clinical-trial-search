@@ -396,14 +396,23 @@ this section previously carried.
 | `load_corpus` | 0.4 s | 318 MB | 10,666 rows, 4 of 21 columns |
 | `preprocess` (cold) | 46.3 s | 313 MB | 22 MB token cache |
 | `preprocess` (warm) | 0.0 s | 318 MB | cache hit |
-| `train_skipgram` | 30.0 s | 319 MB | **10.2 MB** |
-| `train_fasttext` | 56.0 s | 346 MB | **29.3 MB** |
-| `build_index` (each) | ~7 s | 152 MB | **4.1 MB** |
-| **Full `make train`** | **2 min 22 s** | **≤ 350 MB** | 59 MB total |
+| `train_skipgram` | 27.9 s | 320 MB | **12.8 MB** |
+| `train_fasttext` | 59.1 s | 353 MB | **31.9 MB** |
+| `build_index` (both) | 16.9 s | 152 MB | **4.3 MB** each |
+| **Full `medsearch train --model all`** | **2 min 2 s** | **≤ 353 MB** | 77 MB total |
 | Serving, skipgram, embedding only | 2.96 s cold load | **342 MB** | — |
 | Serving, **fasttext + union (ships)** | TF-IDF build at load | **438 MB** | — |
 
-Vocabulary: 24,897 words. Out-of-vocabulary documents: **2 of 10,666 (0.02%)**.
+Vocabulary: **31,189** words. Out-of-vocabulary documents: 2 of 10,666 (0.02%).
+
+**These figures were re-measured on 2026-08-29 from a clean clone, and they
+moved.** The originals (vocabulary 24,897, skipgram 10.2 MB, fasttext 29.3 MB,
+2 min 22 s) were taken on 2026-08-27, *before* the domain audit fixed the
+tokeniser. Preserving alphanumeric identity means `sarscov2`, `il6` and `cd4`
+survive as distinct tokens, so the vocabulary grew **25 %** and the artefacts
+with it -- the cost side of the retrieval gain measured in
+[EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) §8. Both artefacts remain far
+inside the 150 MB cap, and training got slightly *faster*.
 
 ### Reproducibility
 
@@ -447,8 +456,8 @@ loudly at load time and in `doctor --full`.
 |--------|--------|----------|---|
 | Full pipeline peak RSS | ≤ 2.5 GB | **~350 MB** | 7x headroom |
 | Serving RSS | ≤ 1.2 GB | **438 MB** (shipped default) | 2.7x headroom |
-| Training wall time | ≤ 15 min | **2 min 22 s** | 6x faster |
-| Any single artefact | ≤ 150 MB | **29.3 MB** | 5x headroom |
+| Training wall time | ≤ 15 min | **2 min 2 s** | 7x faster |
+| Any single artefact | ≤ 150 MB | **31.9 MB** | 4.7x headroom |
 | `data/` + `models/` total | ≤ 1.5 GB | **59 MB** | 25x headroom |
 | Query latency p95 (PRD G2) | < 300 ms | **3.3 ms** embedding · **128 ms** union | 2.3x faster |
 

@@ -334,18 +334,69 @@ the JSON and runbook regardless.
 | 11.3 | README: architecture diagram, benchmarks, troubleshooting |
 | 11.4 | ADR review — remove anything superseded |
 | 11.5 | Reconcile all five docs against the shipped code |
-| 11.6 | Tag `v1.0.0` |
+| 11.6 | Tag `v1.0.0` — *see the note below before doing this* |
 
 **DoD:** clean-clone → `make setup && make doctor && make train && make app` succeeds on the
 dev laptop with no manual steps and no unresponsiveness.
 **Est:** 1 day.
 
-**Status 2026-08-28.** 11.1 and 11.2 are done — `doctor --full` and
+**Status 2026-08-29.** 11.1 and 11.2 are done — `doctor --full` and
 `pipelines/integrity.py` came out of this sprint, and found the stale-index
 class. 11.3 and 11.4 are done. 11.5 was done twice: once at the end of the
 sprint, and again on 2026-08-28 after the evaluation audit invalidated the
-numbers the docs quoted. **Outstanding: 11.6 (`v1.0.0`), and the clean-clone
-DoD run itself, which has never been performed.**
+numbers the docs quoted.
+
+**The clean-clone run was performed on 2026-08-29, and it substantively
+passes.** A fresh `git clone` from GitHub reached a working app: install
+3 min 44 s, NLTK 14.5 s, `doctor` correct in both directions (exit 1 while
+unhappy, exit 0 once the corpus is present and RAM is free), full-corpus
+training 2 min 2 s at 353 MB peak, index build 16.9 s, CLI search returning
+respiratory-failure trials, Streamlit serving HTTP 200 with an 11 KB page.
+Nothing in the pipeline was broken. **The dependency ranges resolved safely**
+-- gensim 4.4.0, scipy 1.15.3, pandas 2.3.3, identical to the development venv
+-- though that is luck rather than design, since only numpy is capped.
+
+**Four defects, all in the path from clone to corpus, none in the code:**
+
+1. **`make` is not installed on the reference machine**, so this DoD as written
+   (`make setup && make doctor && make train && make app`) cannot pass on the
+   laptop it names. The README's no-make fallback is what actually works.
+2. **"with no manual steps" is unachievable by construction.** The 29 MB corpus
+   is gitignored -- correctly -- so a clean clone has no data and *must* have a
+   manual acquisition step. The DoD needs rewording, not the repo changing.
+3. **`doctor`'s remediation points at a dead end.** It says "Run `make data`",
+   but `make` is absent *and* `migrate_legacy.py` resolves its legacy root to
+   the clone's parent, looking for `../Part_1/Data/Data/Dimension-covid.csv`
+   -- a layout that exists only on the original machine. It should point at the
+   figshare download in README §Data.
+4. **The README's no-make fallback omits the data step entirely**, so a Windows
+   user goes `doctor` -> `train` and meets the missing corpus with no guidance
+   in the path they were following.
+
+Also worth knowing on Windows: clone into a **short path**. A deeply nested
+clone blew the 260-character `MAX_PATH` limit while pip was unpacking
+`numpy.libs`, and the install failed with an unhelpful `OSError`.
+
+**Outstanding: 11.6 (`v1.0.0`).**
+
+**On tagging `v1.0.0`: not yet, and this plan is not the authority.** A `1.0.0`
+tag conventionally asserts stability, and the project's own documents currently
+record an unmet image-size DoD (941 MB against < 800 MB), no Azure deployment,
+no search ever driven through the UI in a browser, an evaluation set 42 % of
+whose judgements are model-generated with no clinician review, and one flaky
+guard test with no root cause. Tagging that `1.0.0` would assert something the
+measurements do not support -- the exact failure
+[EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) exists to document.
+
+This plan was written before anything was measured, and its numbers have been
+wrong repeatedly since: the 800 MB image, the 30-second test budget,
+`Recall@10 0.955`. It does not get to override a measurement now.
+
+`release.yml` triggers on `v*.*.*` and has never run, but it also carries
+`workflow_dispatch`, so the release pipeline can be exercised without a tag.
+**Recommendation: tag `v0.11.0`** for the audit and container work, consistent
+with the existing v0.x sprint tags, and save `1.0.0` for when a real deployment
+and an independent review of the judgements make it mean something.
 
 ---
 

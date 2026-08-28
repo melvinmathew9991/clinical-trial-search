@@ -18,7 +18,11 @@ from typing import cast  # noqa: E402
 import typer  # noqa: E402
 
 from medsearch.config import FieldName, ModelName, Pooling, Settings, get_settings  # noqa: E402
-from medsearch.exceptions import ConfigurationError, MedSearchError  # noqa: E402
+from medsearch.exceptions import (  # noqa: E402
+    CORPUS_SOURCE_URL,
+    ConfigurationError,
+    MedSearchError,
+)
 from medsearch.logging_conf import configure_logging, get_logger  # noqa: E402
 from medsearch.runtime import (  # noqa: E402
     cpu_count,
@@ -192,7 +196,13 @@ def doctor(
     corpus = settings.paths.corpus_file
     typer.echo(f"  Corpus: {'found' if corpus.exists() else 'MISSING'} at {corpus}")
     if not corpus.exists():
-        problems.append(f"Corpus missing. Run `make data` or place it at {corpus}.")
+        problems.append(
+            f"Corpus missing at {corpus}.\n"
+            f"        Download the Dimensions COVID-19 export, save the CSV there:\n"
+            f"        {CORPUS_SOURCE_URL}\n"
+            f"        (`make data` migrates a local legacy Part_1 tree and "
+            f"cannot help a fresh clone.)"
+        )
 
     try:
         ensure_nltk_data()

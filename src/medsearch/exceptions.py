@@ -11,6 +11,18 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Final
+
+#: Where the corpus actually comes from. A fresh clone has no data -- the 29 MB
+#: export is gitignored -- so every "corpus missing" message has to name a
+#: source the reader can reach. `make data` is not one: it migrates a local
+#: legacy `Part_1` tree, which exists only on the machine this project grew
+#: up on. Defined in the lowest layer so the CLI and this exception cannot
+#: drift apart; they said different things until 2026-08-29.
+CORPUS_SOURCE_URL: Final[str] = (
+    "https://dimensions.figshare.com/articles/dataset/"
+    "Dimensions_COVID-19_publications_datasets_and_clinical_trials/11961063"
+)
 
 
 class MedSearchError(Exception):
@@ -34,7 +46,8 @@ class CorpusNotFoundError(DataError):
         super().__init__(
             f"Corpus not found at {path}.\n"
             f"  Expected: the Dimensions COVID-19 clinical-trial CSV export.\n"
-            f"  Fix: place the Dimensions export at {path}.\n"
+            f"  Fix: download it and save the CSV at {path}\n"
+            f"    {CORPUS_SOURCE_URL}\n"
             f"  Note: the legacy Part_1 copy was deleted once the migration was "
             f"verified, so `make data` can no longer recover it."
         )
