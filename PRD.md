@@ -87,6 +87,8 @@ Priority: **P0** = v1 blocker · **P1** = v1 target · **P2** = post-v1.
 | F-10 | Preprocessing is a pure function — no mutation of the caller's DataFrame | P0 |
 | F-11 | Compile every regex once at module import, not per call | P0 |
 | F-12 | Support a domain allowlist so negation terms (`no`, `not`) survive stopword removal | P2 |
+| F-42 | Answer a registry-id query with that trial, at rank 1 | **P0** |
+| F-43 | Honour free-standing negation (`not X`, `without X`) as an exclusion, not a term | P2 |
 
 ### Embeddings
 | ID | Requirement | Priority |
@@ -469,6 +471,44 @@ unreplicated run each. **Defaults stay as they are.** Promoting `window=10` or
 `epochs=15` on this evidence would be reading noise as signal — the same
 mistake §8.2 and §8.3 were run to avoid, and the union numbers they produce
 (+0.013 at best) are inside the noise band anyway.
+
+### 8.5 Two capabilities added before deployment
+
+**F-42 — search by trial id.** Measured over 60 real ids drawn five per registry
+from all twelve registries, the system returned the requested trial **0 times**:
+not at rank 1, not in the top 10, not at all. Every row carries a unique
+`Trial ID`, retrieval ran on `abstract`, and nothing indexed the identifier, so
+the most basic known-item operation a trial-search tool offers did not work.
+
+An identifier is a key, so it gets a lookup that precedes the ranking, and
+trials whose abstracts cite the id follow directly below. **0/60 → 60/60 at
+rank 1.** The ground truth is exact — ids are unique — so this is the only
+measurement in the project with no annotator provenance to declare.
+
+The cost is stated rather than removed: round 3's `code` stratum, which scores
+the *different* question of which trials cite an id, falls from MRR@10 1.000 to
+0.667, because its gold lists citing trials only and excludes the queried trial
+by construction. Its judgements were **not** rewritten to hide that. See
+EVALUATION_AUDIT §10.1.
+
+**F-43 — free-standing negation.** EVALUATION_AUDIT §8 Result 5 established that
+no additive feature scheme can express negation, and bigrams were built and
+rejected on measurement. The query now carries an operator instead: cue-and-scope
+detection in the NegEx style, run on the query to find what is excluded and on
+the *document* to separate an abstract that asserts the concept from one that
+denies it. Overlap between a query and its negated twin falls **0.55 → 0.33**,
+entirely on the two free-standing pairs; the two prefix pairs, which already
+worked by morphological substitution, do not move.
+
+It fires on **0 of the 97 main-set queries** and leaves every headline number
+unchanged. On the stratum it targets it buys P@1 0.375 → 0.438 and R-precision
+0.427 → 0.448 at a cost of Recall@10 0.643 → 0.560, because filtering removes
+documents. Both halves of that trade are recorded in EVALUATION_AUDIT §10.2.
+
+**Limits.** Two queries drive the negation measurement, and the cue lexicon was
+extended after inspecting failures on them, so its coverage on unseen negations
+is unmeasured. The known-item result carries no such caveat: n = 60, exact
+ground truth.
 
 ## 9. Constraints & assumptions
 

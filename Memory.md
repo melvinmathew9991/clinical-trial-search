@@ -13,8 +13,8 @@
 | **Version** | `v0.10.0` + Tracks 0, 1, 2 + the domain-audit remediation (unreleased) |
 | **Done** | Sprints 0–7, 9, 10, 11 (bar the tag) · Tracks 0, 1, 2 · Sprint 8 **including three rounds of relevance judging** · the union/lexical product decision |
 | **Not done** | `v1.0.0` tag (**recommend `v0.11.0` instead** — see Phases §11) · an independent clinician review of the judgements · **Sprint 9's image-size DoD (941 MB against < 800 MB)** · an actual Azure deploy · a search driven through the UI in a browser · free-standing negation (needs a query parser, not a token list) · indexing the `Trial ID` column |
-| **Branch** | `fix/union-fusion-tiebreak`. **Everything through PR #26 is merged to `main`** — the earlier note here that `main` sat at the Sprint 0 scaffolding was stale and is corrected. Tags run to `v0.9.0`. |
-| **Next action** | **The union decision is CLOSED (2026-08-29) — it ships on by default.** The evidence against it was a fusion defect: disjoint runs tied at identical RRF scores and `sorted` broke the tie by dict insertion order, handing rank 1 to the embedding run. Fixed by weighting the keyword run and breaking ties explicitly; `code` stratum MRR@10 0.500 → **1.000**, recall unchanged everywhere. See EVALUATION_AUDIT §9 and PRD §8.4. **Next: the three remaining clean-clone on-ramp defects**, then replicate §9's main-set deltas. |
+| **Branch** | `feat/pre-deployment-closeout`. **Everything through PR #26 is merged to `main`** — the earlier note here that `main` sat at the Sprint 0 scaffolding was stale and is corrected. Tags run to `v0.9.0`. |
+| **Next action** | **Deployment.** The pre-deployment close-out is done: union decision closed, memory-guard flake root-caused and fixed, dependencies pinned and locked, on-ramp defects fixed, and the two capability gaps closed (trial-id lookup 0/60 → 60/60; free-standing negation as an operator, pair overlap 0.55 → 0.33). **Still open before a `v1.0.0` tag: the Docker image-size DoD (941 MB against < 800 MB, unverified this session because the Docker daemon was down), a browser-driven search, and the lock regenerated on linux/py3.11.** |
 | **Note** | Full-corpus training takes 2 min 22 s at ~350 MB peak. Databricks is no longer *required* for it, though still the right home for scheduled retraining. |
 | **Docker** | Installed on the dev machine 2026-08-28. Both image targets build and serve; `deploy/docker/compose.yaml` is the local run. Building it found a defect no test could reach — see the session entry at the end of this file. |
 | **Track 0** | ✅ **COMPLETE** — full-corpus run done 2026-08-27 23:15. Architecture §9 now holds measurements, not estimates. |
@@ -1518,3 +1518,67 @@ established. Replicating it is the first item on the eval backlog.
 
 **Gates**: ruff, ruff-format, mypy --strict, import-linter, function-length all
 green; 567 tests pass (was 561), coverage 88%.
+
+---
+
+## Session — 2026-08-29 (later still): the pre-deployment close-out
+
+Asked to close everything outstanding before deployment, with real
+experimentation rather than assertion. Four things came out of it.
+
+**1. The "flaky guard test" was misdiagnosed, and much bigger than recorded.**
+Not order-dependence. `trainer._check_memory_budget` compared free RAM against
+`predicted_gb + 0.5`, and `predicted_gb` models only the n-gram matrix -- a
+fixed ~20 MB whatever the corpus size. So the bare `+ 0.5` *was* the whole
+requirement, and a 20-row toy run demanded as much free RAM as the full
+10,666-document one. Under memory pressure **eleven** tests fail intermittently,
+not the one on record. The message was unreadable too: "peak is ~0.00 GB but
+only 0.42 GB is available". The requirement now scales with document count and
+prints its breakdown. Eight consecutive integration runs pass, against two
+failures in eight before. Same defect class as `TestScaledMemoryFloor` in
+`runtime.require_memory` -- the trainer kept its own copy and was missed.
+
+**2. Known-item retrieval did not exist, and nobody had measured it.** Sixty
+real trial ids, five per registry across all twelve registries: the shipped
+retriever returned the requested trial **0 times**. Ids are unique, so the
+ground truth is exact and needs no annotator -- the only stratum in the project
+with no provenance to declare. An identifier is a key, so it now gets a lookup
+that precedes the ranking: **0/60 → 60/60 at rank 1**. Round 3's `code` stratum
+falls MRR@10 1.000 → 0.667 as a result, because it scores a different question
+(which trials *cite* this id) and its gold excludes the queried trial by
+construction. **The gold was not rewritten to hide that.**
+
+**3. Free-standing negation, built as an operator and measured.** Cue-and-scope
+on both sides, NegEx style. Two iterations, both from inspecting what the
+filter removed:
+
+* Grammatical-negation cues alone removed five of six gold documents, all
+  phrased as *avoidance* -- "reduces the need for", "decrease the need of". In
+  clinical abstracts the negated sense is carried by those verbs, not by "not".
+* A one-word scope is too blunt. "spread by people without symptoms" parsed to
+  "exclude anything mentioning symptoms" and took main-set Recall@10 from 0.702
+  to 0.698, under target, on one query. Scopes now need two tokens.
+
+Pair overlap 0.55 → 0.33, entirely on the two free-standing pairs; the prefix
+pairs do not move, which tests the mechanism claim directly. Fires on 0 of 97
+main-set queries. Costs Recall@10 0.643 → 0.560 on the stratum it targets --
+recorded, not hidden.
+
+**4. Reproducibility and the on-ramp.** Every dependency now has an upper bound
+(only numpy was capped); `deploy/requirements.lock` pins the closure and the
+image installs against it as a constraint. Coverage left the default pytest
+addopts -- it cost ~25 s of a 40.5 s run while the gate actually lives in CI and
+`make test-all`, so Rules.md section 5 is met honestly at **18.7 s** rather than
+by moving the budget. Sprint 11's DoD was reworded to something achievable, and
+the README's no-make fallback gained the corpus step it omitted.
+
+**Also found and fixed:** `run_evaluation` unconditionally wrote
+`reports/evaluation.json`, so `round3_evaluate.py` silently overwrote the main
+report with whichever stratum ran last.
+
+**What is honestly still open.** The Docker image-size DoD (941 MB against
+< 800 MB) could not be touched -- the Docker daemon was down all session. No
+browser-driven search. The lock was resolved on Windows/py3.10 and needs
+regenerating on linux/py3.11. And the negation cue lexicon was extended after
+inspecting failures on two queries, so it is fitted to them: the mechanism is
+validated, the lexicon's coverage on unseen negations is not.

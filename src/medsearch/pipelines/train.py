@@ -244,12 +244,22 @@ def load_search_engine(
     *,
     limit: int | None = None,
     pooling: Pooling | None = None,
+    known_item: bool = True,
 ) -> object:
     """Assemble a ready-to-query :class:`~medsearch.search.engine.SearchEngine`.
 
     Verifies that the index on disk was produced by the model being loaded.
+
+    Args:
+        known_item: Wrap the result so a registry-ID query returns that trial at
+            rank 1. Callers that are assembling a *component* rather than
+            something a user queries must pass ``False`` -- notably
+            :func:`load_union_retriever`, which would otherwise promote the id
+            inside its embedding half and then fuse the result.
     """
     from medsearch.search.engine import SearchEngine
+    from medsearch.search.known_item import KnownItemRetriever
+    from medsearch.search.negation import NegationFilter
 
     kind = ModelKind(model)
     paths = settings.paths
@@ -306,7 +316,7 @@ def load_search_engine(
             index.sampled_limit,
         )
 
-    return SearchEngine(
+    engine = SearchEngine(
         index=index,
         # The query must be embedded exactly as the documents were: same
         # weights, and the engine strips the same principal component.
@@ -314,6 +324,12 @@ def load_search_engine(
         preprocessor=TextPreprocessor(),
         corpus=corpus,
     )
+    # Known-item outermost: an identifier query is answered by lookup whatever
+    # the rest of the query says. Negation filtering sits below it, over the
+    # ranking it applies to.
+    if not known_item:
+        return engine
+    return KnownItemRetriever(NegationFilter(engine, corpus), corpus)
 
 
 def resolve_models(selection: str) -> list[ModelName]:
@@ -370,8 +386,13 @@ def load_union_retriever(
     from medsearch.search.baseline import TfidfBaseline
     from medsearch.search.engine import SearchEngine
     from medsearch.search.hybrid import UnionRetriever
+    from medsearch.search.known_item import KnownItemRetriever
+    from medsearch.search.negation import NegationFilter
 
-    engine = cast("SearchEngine", load_search_engine(settings, model, field, limit=limit))
+    engine = cast(
+        "SearchEngine",
+        load_search_engine(settings, model, field, limit=limit, known_item=False),
+    )
 
     # Reuse the engine's corpus rather than loading a second copy: it costs
     # ~35 MB, and an independent load with the caller's `limit` disagrees with
@@ -381,4 +402,7 @@ def load_union_retriever(
     effective_limit = limit if limit is not None else engine.sampled_limit
     cache, _, _ = run_preprocessing(settings, field, limit=effective_limit)
     baseline = TfidfBaseline(cache)
-    return UnionRetriever(engine, baseline, engine.corpus)
+    # Wrapped at the outermost layer only: the identifier is promoted above the
+    # fused ranking, never inside one of the two runs being fused.
+    union = UnionRetriever(engine, baseline, engine.corpus)
+    return KnownItemRetriever(NegationFilter(union, engine.corpus), engine.corpus)

@@ -84,6 +84,37 @@ medsearch search "kidney injury" --json  # machine-readable output
 medsearch index info --model skipgram    # inspect an index manifest
 ```
 
+## Two things the search does beyond ranking
+
+**Paste a trial id and get that trial.** Registry ids are keys, so they get a
+lookup that runs ahead of the ranking; case and separators do not matter, so
+`CTRI/2021/05/033883`, `ctri 2021 05 033883` and `CTRI202105033883` all resolve
+to the same trial. Trials whose abstracts *cite* the id follow directly below.
+
+```bash
+medsearch search "CTRI/2021/05/033883"
+medsearch search "NCT04372368"
+```
+
+Before this existed, 60 real ids sampled across all twelve registries returned
+the requested trial **zero** times -- ids live in a column the text index never
+read. It is 60 out of 60 at rank 1 now (EVALUATION_AUDIT §10.1).
+
+**Negation is an operator, not a word.** `not X` and `without X` exclude
+documents that *assert* X, while keeping those that deny or avoid it -- which
+matters, because a trial answering "without mechanical ventilation" usually
+says so by talking about ventilation.
+
+```bash
+medsearch search "treatment without mechanical ventilation"
+```
+
+The scope runs to a conjunction or five tokens, and needs at least two tokens:
+"without symptoms" names a concept rather than an exclusion, and filtering on
+it removed the asymptomatic-transmission trials the query wanted. Overlap
+between a query and its negated twin falls 0.55 to 0.33, and the main
+97-query benchmark is unchanged (EVALUATION_AUDIT §10.2).
+
 ## Python API
 
 ```python

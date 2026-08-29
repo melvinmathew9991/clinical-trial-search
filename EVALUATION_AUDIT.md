@@ -526,6 +526,118 @@ for effects of this size. The defect is unambiguous and the fix is
 directionally right on every stratum; the magnitude on the main set is not
 established.
 
+## 10. The two capability gaps, closed and measured
+
+*2026-08-29, later.*
+
+### 10.1 Known-item retrieval did not exist
+
+Section 8 noted that only 71 of 10,666 abstracts contain a registry code and
+suggested indexing the `Trial ID` column. Measured before doing so, over **60
+real trial ids drawn five per registry from all twelve registries**:
+
+| | before | after |
+|---|---|---|
+| requested trial at rank 1 | **0 / 60** | **60 / 60** |
+| requested trial anywhere in the result set | 0 / 60 | 60 / 60 |
+
+Not a ranking failure. Every row carries a unique `Trial ID`, retrieval ran on
+`abstract`, and nothing indexed the identifier — so the single most common
+known-item operation a trial-search tool offers returned the trial **zero**
+times. The ground truth here needs no annotator: ids are unique, so the answer
+is defined rather than judged. It is the only stratum in the project with no
+provenance to declare (`tests/fixtures/eval_queries_known_item.json`,
+`scripts/known_item_evaluate.py`).
+
+An identifier is a key, so it gets a lookup, and the lookup precedes the
+ranking. Ids are normalised to letters and digits, so `CTRI/2021/05/033883`,
+`ctri 2021 05 033883` and `CTRI202105033883` all resolve; two ids colliding
+after normalisation are served to nobody rather than served wrongly.
+
+**What it costs, stated plainly.** Round 3's `code` stratum falls from MRR@10
+1.000 to 0.667. That stratum scores a *different question* — which trials
+**cite** this id — and its gold lists citing trials only, excluding the queried
+trial by construction rather than by judgement. Two of its three queries are
+themselves trials in the corpus, so promoting the trial inserts a document its
+gold cannot contain. **The gold was not re-judged to remove this cost**, which
+would have been the easy and dishonest move; both numbers stand, measuring
+their own questions. The main 97-query set is unchanged.
+
+### 10.2 Free-standing negation, as an operator
+
+Section 8 Result 5 closed off feature engineering:
+
+> Negation requires removing or inverting shared evidence. Every additive
+> feature scheme can only add evidence, and therefore none of them can express
+> it.
+
+So the query carries the operator. Cue-and-scope detection in the NegEx style
+(Chapman et al., 2001) runs on **both** sides: on the query to find what the
+user rules out, and on the document to tell an abstract that asserts the
+concept from one that denies it. That second half is the point — the documents
+a negated query wants are mostly the ones that mention the concept in order to
+negate it, and a plain exclusion filter throws them away.
+
+**Two iterations, both driven by inspecting what the filter removed.**
+
+1. *Cues covering only grammatical negation removed five of six gold documents*
+   for `treatment without mechanical ventilation`. They read "reduces the need
+   for", "decrease the need of", "risk of need for" — in this domain the
+   negated sense is carried by **avoidance language**, not by "not". Adding
+   those cues took it to six of eight kept.
+2. *A one-word scope is too blunt to filter on.* `spread by people without
+   symptoms` parsed to "exclude anything mentioning symptoms", removing the
+   asymptomatic-transmission trials the query asked for and taking main-set
+   Recall@10 from 0.702 to **0.698, under the PRD target, on one query**. Such
+   a phrase names a concept, not an exclusion. Scopes now need two tokens.
+
+**Result.** Overlap@10 between each query and its negated twin — 1.00 means the
+negation changed nothing:
+
+| pair | before | after |
+|---|---|---|
+| non-hospitalized patients with covid-19 | 0.10 | 0.10 |
+| **patients not requiring supplemental oxygen** | 0.90 | **0.60** |
+| non-severe covid-19 pneumonia | 0.40 | 0.40 |
+| **treatment without mechanical ventilation** | 0.80 | **0.20** |
+| **mean** | 0.55 | **0.33** |
+
+The two prefix pairs do not move and the two free-standing pairs move a long
+way, which is the mechanism claim tested directly: prefix negation already
+worked by morphological substitution, and only free-standing negation needed
+the operator.
+
+On the negation stratum, union-fasttext:
+
+| | before | after |
+|---|---|---|
+| P@1 | 0.375 | **0.438** |
+| MRR@10 | 0.532 | **0.567** |
+| R-precision | 0.427 | **0.448** |
+| nDCG@10 | 0.529 | 0.521 |
+| Recall@10 | 0.643 | **0.560** |
+
+**It costs recall, and that is not hidden.** Filtering removes documents; two of
+the eight gold documents inspected are still removed wrongly. The trade is
+precision at the top and pair discrimination against Recall@10 on the two
+queries the filter fires on.
+
+**On the main 97-query set it fires on 0 of 97 queries and changes nothing** —
+Recall@10 0.702, MRR@10 0.923, all PRD targets met. Set against the bigram
+scheme section 8 Result 5 rejected, which moved one pair 0.90 → 0.80 and cost
+0.08 to 0.19 nDCG@10 across *every* stratum, this is the better trade by a wide
+margin.
+
+### The caveat both share
+
+Two queries drive the negation result and three drive `code`. The audit's own
+warning applies: these strata are **diagnostic, not powered**. The cue lexicon
+in particular was extended after inspecting failures on those two queries, so
+it is fitted to them; the mechanism is validated by the prefix/free-standing
+split, but the lexicon's coverage on unseen negations is unmeasured. The
+known-item result needs no such caveat — n = 60, exact ground truth, 0.000
+against 1.000.
+
 ## Current status of the numbers
 
 *Updated 2026-08-29, after §9. Everything above §7 is round-1 history and is
@@ -542,6 +654,8 @@ This table is what currently holds.*
 | Recall@10 ceiling = 0.879 | ❌ **superseded** — 0.626 at depth 10, 0.951 at depth 20, with 17.4 relevant documents per query |
 | Tokeniser fix improves retrieval | ✅ **CONFIRMED — §8.** Registry-code Recall@10 0.44 → 1.00 (TF-IDF) and 0.33 → 1.00 (BM25); `CD4` and `CD8` returned an identical top-10 under the old chain and are separated under the new one |
 | Negation fix improves retrieval | ⚠️ **half-refuted — §8.** The gain comes from hyphen-joining (`nonhospitalized`, idf 6.45), not from `CLINICAL_KEEP_WORDS`. Free-standing `not` / `without` is retained but inert at idf 2.18 / 3.16, and the two pairs that turn on it are unchanged |
+| Known-item retrieval by trial id | ✅ **closed — §10.1.** 0/60 → 60/60 at rank 1, exact ground truth, n = 60 |
+| Free-standing negation is unreachable | ✅ **closed as an operator — §10.2.** Pair overlap 0.55 → 0.33, main set unchanged. Costs Recall@10 on the two queries it fires on |
 | The union is safe to ship by default | ✅ **resolved — §9.** The known-item damage was an insertion-order tie-break, now fixed: the `code` stratum reaches MRR@10 and nDCG@10 1.000. Recall unchanged at 0.702; ships on by default (PRD §8.4) |
 | The judgements are human ground truth | ⚠️ **no** — 986 human, **705 model-generated** (κ = 0.800 against the human labels). That provenance travels with every number in this table |
 
@@ -565,13 +679,10 @@ involves **no judgement of any kind**.
 
 Remaining, in order:
 
-1. **Free-standing negation needs a query parser, not a token list.** §8
-   Results 2 and 5 together show why no feature scheme reaches it: an additive
-   representation cannot subtract shared evidence. Bigrams were tried and
-   rejected on measurement -- they left the negation pairs where they were and
-   cost 0.08 to 0.19 nDCG@10 across every other stratum. Treating negation as
-   an operator is a design change, and it is the one open *modelling* question
-   left.
+1. ~~**Free-standing negation needs a query parser, not a token list.**~~
+   **Built and measured — §10.2.** Pair overlap 0.55 → 0.33, main set
+   untouched. What remains is the lexicon's coverage on negations outside the
+   two queries it was fitted to.
 2. **An independent check.** The κ = 0.800 calibration substitutes for a second
    annotator, not for a clinician. Single-source judgements still carry no
    external error bar, and 705 of them were produced by the same class of
@@ -581,10 +692,9 @@ Remaining, in order:
    level with the lexical baselines at equal depth and ahead on recall and
    R-precision at its own. It ships on by default. What remains is to replicate
    §9's main-set deltas, which are unreplicated and untested.
-4. **Index the `Trial ID` column, or decide not to.** Only 71 of 10,666
-   abstracts contain a registry code (§8). Searching by trial id is a
-   capability this system does not have, and no amount of tokeniser work
-   gives it one.
+4. ~~**Index the `Trial ID` column, or decide not to.**~~ **Done — §10.1.**
+   Not by indexing the column into the text ranking, but by treating the
+   identifier as a key: 0/60 → 60/60 at rank 1.
 
 **How to quote these numbers.** Give nDCG@10 and R-precision alongside
 Recall@10, never Recall alone. State the depth-10 ceiling (0.626) wherever

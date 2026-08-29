@@ -1,0 +1,503 @@
+{
+ "_about": [
+  "Known-item retrieval: the user pastes a registry id and wants that trial.",
+  "",
+  "GROUND TRUTH IS EXACT AND INVOLVES NO JUDGEMENT. Every one of the 10,666 rows",
+  "carries a unique Trial ID, so the answer to 'NCT04372368' is defined, not judged.",
+  "That makes this the only stratum in the project with no annotator provenance to",
+  "declare -- and the reason it is a separate instrument from round 3's `code`",
+  "stratum, which asks a different question.",
+  "",
+  "`code` scores 'which trials CITE this id', and its gold sets list citing trials",
+  "only -- excluding the queried trial itself by construction, not by judgement.",
+  "This stratum scores 'give me THIS trial'. Both are legitimate; they are not the",
+  "same task, and neither gold set answers the other's question.",
+  "",
+  "Sampling: 5 ids per registry, all 12 registries, random.seed(0),",
+  "drawn from sorted ids so the fixture regenerates identically. Stratifying matters",
+  "because id shape varies by registry (CTRI/2021/05/033883 against NCT04912934",
+  "against 2021-001036-25) and normalisation has to survive all of them."
+ ],
+ "queries": [
+  {
+   "query": "ACTRN12621000532808",
+   "stratum": "known_item",
+   "relevant": [
+    "ACTRN12621000532808"
+   ],
+   "note": "Registry ANZCTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "ACTRN12620000620921",
+   "stratum": "known_item",
+   "relevant": [
+    "ACTRN12620000620921"
+   ],
+   "note": "Registry ANZCTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "ACTRN12621000034831",
+   "stratum": "known_item",
+   "relevant": [
+    "ACTRN12621000034831"
+   ],
+   "note": "Registry ANZCTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "ACTRN12621000538842",
+   "stratum": "known_item",
+   "relevant": [
+    "ACTRN12621000538842"
+   ],
+   "note": "Registry ANZCTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "ACTRN12620000636954",
+   "stratum": "known_item",
+   "relevant": [
+    "ACTRN12620000636954"
+   ],
+   "note": "Registry ANZCTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "CHICTR2000029579",
+   "stratum": "known_item",
+   "relevant": [
+    "CHICTR2000029579"
+   ],
+   "note": "Registry CHICTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "CHICTR2000030257",
+   "stratum": "known_item",
+   "relevant": [
+    "CHICTR2000030257"
+   ],
+   "note": "Registry CHICTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "CHICTR2000031174",
+   "stratum": "known_item",
+   "relevant": [
+    "CHICTR2000031174"
+   ],
+   "note": "Registry CHICTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "CHICTR2000030947",
+   "stratum": "known_item",
+   "relevant": [
+    "CHICTR2000030947"
+   ],
+   "note": "Registry CHICTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "CHICTR2000030778",
+   "stratum": "known_item",
+   "relevant": [
+    "CHICTR2000030778"
+   ],
+   "note": "Registry CHICTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "KCT0005473",
+   "stratum": "known_item",
+   "relevant": [
+    "KCT0005473"
+   ],
+   "note": "Registry CRIS. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "KCT0005711",
+   "stratum": "known_item",
+   "relevant": [
+    "KCT0005711"
+   ],
+   "note": "Registry CRIS. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "KCT0005634",
+   "stratum": "known_item",
+   "relevant": [
+    "KCT0005634"
+   ],
+   "note": "Registry CRIS. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "KCT0005344",
+   "stratum": "known_item",
+   "relevant": [
+    "KCT0005344"
+   ],
+   "note": "Registry CRIS. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "KCT0005226",
+   "stratum": "known_item",
+   "relevant": [
+    "KCT0005226"
+   ],
+   "note": "Registry CRIS. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "CTRI/2020/09/027617",
+   "stratum": "known_item",
+   "relevant": [
+    "CTRI/2020/09/027617"
+   ],
+   "note": "Registry CTRI. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "CTRI/2020/06/026232",
+   "stratum": "known_item",
+   "relevant": [
+    "CTRI/2020/06/026232"
+   ],
+   "note": "Registry CTRI. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "CTRI/2020/06/025664",
+   "stratum": "known_item",
+   "relevant": [
+    "CTRI/2020/06/025664"
+   ],
+   "note": "Registry CTRI. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "CTRI/2020/08/027282",
+   "stratum": "known_item",
+   "relevant": [
+    "CTRI/2020/08/027282"
+   ],
+   "note": "Registry CTRI. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "CTRI/2021/03/031664",
+   "stratum": "known_item",
+   "relevant": [
+    "CTRI/2021/03/031664"
+   ],
+   "note": "Registry CTRI. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "NCT04847622",
+   "stratum": "known_item",
+   "relevant": [
+    "NCT04847622"
+   ],
+   "note": "Registry ClinicalTrials.gov. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "NCT04738708",
+   "stratum": "known_item",
+   "relevant": [
+    "NCT04738708"
+   ],
+   "note": "Registry ClinicalTrials.gov. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "NCT04372628",
+   "stratum": "known_item",
+   "relevant": [
+    "NCT04372628"
+   ],
+   "note": "Registry ClinicalTrials.gov. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "NCT04459312",
+   "stratum": "known_item",
+   "relevant": [
+    "NCT04459312"
+   ],
+   "note": "Registry ClinicalTrials.gov. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "NCT04355871",
+   "stratum": "known_item",
+   "relevant": [
+    "NCT04355871"
+   ],
+   "note": "Registry ClinicalTrials.gov. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "EUPAS34437",
+   "stratum": "known_item",
+   "relevant": [
+    "EUPAS34437"
+   ],
+   "note": "Registry ENCePP. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "EUPAS41335",
+   "stratum": "known_item",
+   "relevant": [
+    "EUPAS41335"
+   ],
+   "note": "Registry ENCePP. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "EUPAS35558",
+   "stratum": "known_item",
+   "relevant": [
+    "EUPAS35558"
+   ],
+   "note": "Registry ENCePP. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "EUPAS37360",
+   "stratum": "known_item",
+   "relevant": [
+    "EUPAS37360"
+   ],
+   "note": "Registry ENCePP. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "EUPAS39226",
+   "stratum": "known_item",
+   "relevant": [
+    "EUPAS39226"
+   ],
+   "note": "Registry ENCePP. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "2020-001281-11",
+   "stratum": "known_item",
+   "relevant": [
+    "2020-001281-11"
+   ],
+   "note": "Registry EU-CTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "2020-001659-42",
+   "stratum": "known_item",
+   "relevant": [
+    "2020-001659-42"
+   ],
+   "note": "Registry EU-CTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "2020-001770-30",
+   "stratum": "known_item",
+   "relevant": [
+    "2020-001770-30"
+   ],
+   "note": "Registry EU-CTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "2020-001602-34",
+   "stratum": "known_item",
+   "relevant": [
+    "2020-001602-34"
+   ],
+   "note": "Registry EU-CTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "2020-002310-41",
+   "stratum": "known_item",
+   "relevant": [
+    "2020-002310-41"
+   ],
+   "note": "Registry EU-CTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "DRKS00024688",
+   "stratum": "known_item",
+   "relevant": [
+    "DRKS00024688"
+   ],
+   "note": "Registry GCTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "DRKS00021810",
+   "stratum": "known_item",
+   "relevant": [
+    "DRKS00021810"
+   ],
+   "note": "Registry GCTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "DRKS00024046",
+   "stratum": "known_item",
+   "relevant": [
+    "DRKS00024046"
+   ],
+   "note": "Registry GCTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "DRKS00023553",
+   "stratum": "known_item",
+   "relevant": [
+    "DRKS00023553"
+   ],
+   "note": "Registry GCTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "DRKS00023393",
+   "stratum": "known_item",
+   "relevant": [
+    "DRKS00023393"
+   ],
+   "note": "Registry GCTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "IRCT20201122049463N1",
+   "stratum": "known_item",
+   "relevant": [
+    "IRCT20201122049463N1"
+   ],
+   "note": "Registry IRCT. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "IRCT20200209046427N1",
+   "stratum": "known_item",
+   "relevant": [
+    "IRCT20200209046427N1"
+   ],
+   "note": "Registry IRCT. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "IRCT20130812014333N145",
+   "stratum": "known_item",
+   "relevant": [
+    "IRCT20130812014333N145"
+   ],
+   "note": "Registry IRCT. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "IRCT20210202050218N1",
+   "stratum": "known_item",
+   "relevant": [
+    "IRCT20210202050218N1"
+   ],
+   "note": "Registry IRCT. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "IRCT20080901001165N63",
+   "stratum": "known_item",
+   "relevant": [
+    "IRCT20080901001165N63"
+   ],
+   "note": "Registry IRCT. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "ISRCTN11819073",
+   "stratum": "known_item",
+   "relevant": [
+    "ISRCTN11819073"
+   ],
+   "note": "Registry ISRCTN. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "ISRCTN56526926",
+   "stratum": "known_item",
+   "relevant": [
+    "ISRCTN56526926"
+   ],
+   "note": "Registry ISRCTN. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "ISRCTN78284710",
+   "stratum": "known_item",
+   "relevant": [
+    "ISRCTN78284710"
+   ],
+   "note": "Registry ISRCTN. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "ISRCTN16842454",
+   "stratum": "known_item",
+   "relevant": [
+    "ISRCTN16842454"
+   ],
+   "note": "Registry ISRCTN. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "ISRCTN55359097",
+   "stratum": "known_item",
+   "relevant": [
+    "ISRCTN55359097"
+   ],
+   "note": "Registry ISRCTN. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "NL9307",
+   "stratum": "known_item",
+   "relevant": [
+    "NL9307"
+   ],
+   "note": "Registry NTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "NL9250",
+   "stratum": "known_item",
+   "relevant": [
+    "NL9250"
+   ],
+   "note": "Registry NTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "NL9053",
+   "stratum": "known_item",
+   "relevant": [
+    "NL9053"
+   ],
+   "note": "Registry NTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "NL8993",
+   "stratum": "known_item",
+   "relevant": [
+    "NL8993"
+   ],
+   "note": "Registry NTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "NL7260",
+   "stratum": "known_item",
+   "relevant": [
+    "NL7260"
+   ],
+   "note": "Registry NTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "UMIN000044316",
+   "stratum": "known_item",
+   "relevant": [
+    "UMIN000044316"
+   ],
+   "note": "Registry UMIN-CTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "UMIN000043532",
+   "stratum": "known_item",
+   "relevant": [
+    "UMIN000043532"
+   ],
+   "note": "Registry UMIN-CTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "UMIN000042061",
+   "stratum": "known_item",
+   "relevant": [
+    "UMIN000042061"
+   ],
+   "note": "Registry UMIN-CTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "UMIN000041226",
+   "stratum": "known_item",
+   "relevant": [
+    "UMIN000041226"
+   ],
+   "note": "Registry UMIN-CTR. The query is the trial's own registry id; the trial itself is the answer."
+  },
+  {
+   "query": "UMIN000042034",
+   "stratum": "known_item",
+   "relevant": [
+    "UMIN000042034"
+   ],
+   "note": "Registry UMIN-CTR. The query is the trial's own registry id; the trial itself is the answer."
+  }
+ ]
+}
