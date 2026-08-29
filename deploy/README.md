@@ -230,7 +230,7 @@ restore the previous `models/` + `index/` prefixes from a blob snapshot.
 | 1 | Revoke legacy SAS tokens (§0) | Needs account access |
 | 2 | Apply and verify every step here | Needs a subscription |
 | 3 | Replace `REPLACE_ME` placeholders | Needs real resource ids |
-| 4 | ~~Confirm the image builds and serves~~ | **Done 2026-08-28.** Both targets build; both serve under `--memory=2g`. Building it found a `PermissionError` on `data/interim` that no test could reach — see Phases.md Sprint 9. The image is 941 MB against a < 800 MB DoD |
+| 4 | ~~Confirm the image builds and serves~~ | **Done 2026-08-28.** Both targets build; both serve under `--memory=2g`. Building it found a `PermissionError` on `data/interim` that no test could reach — see Phases.md Sprint 9. The image was 941 MB against a < 800 MB DoD; trimming the venv on 2026-08-29 brought it to **721 MB** (`standalone` 829 MB) — see Phases.md Sprint 9 |
 
 ---
 

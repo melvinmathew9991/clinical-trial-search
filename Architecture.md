@@ -495,7 +495,7 @@ artefacts bind-mounted, uid 10001):
 
 | | Measured |
 |---|---|
-| Image, `runtime` target | **941 MB** summed layers — venv 725, base ~175, NLTK 37 |
+| Image, `runtime` target | **721 MB** summed layers (was 954) — venv trimmed of test suites, debug symbols, pip and Arrow headers. `standalone` 829 MB |
 | Image, `standalone` target | +108.5 MB of baked artefacts |
 | Cold build (no cache) | 8 min 49 s |
 | Container healthy from `up` | < 25 s |

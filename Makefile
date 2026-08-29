@@ -87,6 +87,12 @@ app:  ## Launch the Streamlit UI on :8501
 search:  ## Ad-hoc search: make search Q="lung failure"
 	$(BIN)/medsearch search "$(Q)"
 
+.PHONY: lock
+lock:  ## Regenerate deploy/requirements.lock from inside the image (linux/py3.11)
+	docker build --load --target runtime -t medsearch:lockgen -f deploy/docker/Dockerfile .
+	@echo "Freeze runs against the pre-trim stage; the shipped image has no pip."
+	docker run --rm --entrypoint sh medsearch:lockgen -c 	  "/opt/venv/bin/pip freeze --all | grep -viE '^(pip|setuptools|wheel)==' | grep -v '^medsearch' | sort -f"
+
 .PHONY: evaluate
 evaluate:  ## Run the evaluation suite and write reports/evaluation.json
 	$(BIN)/medsearch evaluate

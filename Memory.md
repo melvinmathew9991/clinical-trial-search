@@ -14,7 +14,7 @@
 | **Done** | Sprints 0–7, 9, 10, 11 (bar the tag) · Tracks 0, 1, 2 · Sprint 8 **including three rounds of relevance judging** · the union/lexical product decision |
 | **Not done** | `v1.0.0` tag (**recommend `v0.11.0` instead** — see Phases §11) · an independent clinician review of the judgements · **Sprint 9's image-size DoD (941 MB against < 800 MB)** · an actual Azure deploy · a search driven through the UI in a browser · free-standing negation (needs a query parser, not a token list) · indexing the `Trial ID` column |
 | **Branch** | `feat/pre-deployment-closeout`. **Everything through PR #26 is merged to `main`** — the earlier note here that `main` sat at the Sprint 0 scaffolding was stale and is corrected. Tags run to `v0.9.0`. |
-| **Next action** | **Deployment.** The pre-deployment close-out is done: union decision closed, memory-guard flake root-caused and fixed, dependencies pinned and locked, on-ramp defects fixed, and the two capability gaps closed (trial-id lookup 0/60 → 60/60; free-standing negation as an operator, pair overlap 0.55 → 0.33). **Still open before a `v1.0.0` tag: the Docker image-size DoD (941 MB against < 800 MB, unverified this session because the Docker daemon was down), a browser-driven search, and the lock regenerated on linux/py3.11.** |
+| **Next action** | **Deployment.** The pre-deployment close-out is complete: union decision closed, memory-guard flake root-caused and fixed, dependencies pinned and locked (lock now verified on linux/py3.11), on-ramp defects fixed, both capability gaps closed (trial-id 0/60 → 60/60; negation pair overlap 0.55 → 0.33), and **the image-size DoD is met — 721 MB against < 800 MB, from a 954 MB baseline.** Remaining before a `v1.0.0` tag: a browser-driven search (no browser driver installed) and the Azure deploy itself. |
 | **Note** | Full-corpus training takes 2 min 22 s at ~350 MB peak. Databricks is no longer *required* for it, though still the right home for scheduled retraining. |
 | **Docker** | Installed on the dev machine 2026-08-28. Both image targets build and serve; `deploy/docker/compose.yaml` is the local run. Building it found a defect no test could reach — see the session entry at the end of this file. |
 | **Track 0** | ✅ **COMPLETE** — full-corpus run done 2026-08-27 23:15. Architecture §9 now holds measurements, not estimates. |
@@ -1582,3 +1582,49 @@ browser-driven search. The lock was resolved on Windows/py3.10 and needs
 regenerating on linux/py3.11. And the negation cue lexicon was extended after
 inspecting failures on two queries, so it is fitted to them: the mechanism is
 validated, the lexicon's coverage on unseen negations is not.
+
+---
+
+## Session — 2026-08-29: the image-size DoD, met
+
+Docker was started, so Sprint 9's last open clause could finally be measured
+rather than argued about.
+
+**The recorded conclusion was wrong, and wrong in an instructive way.**
+Phases.md said the 141 MB over the DoD was *"not reachable by packaging"* and
+that meeting it *"means changing the UI stack, not the Dockerfile"*. That was
+reached by listing package sizes -- pyarrow 156, scipy 143, pandas 76 -- and
+observing that each is a hard dependency. True, and beside the point: nobody
+had looked *inside* the packages.
+
+Measured in the image:
+
+| | |
+|---|---|
+| bundled pytest suites (scipy, numpy, pandas) | **132 MB** |
+| debug symbols across 272 `.so` files | **~70 MB** |
+| pip, setuptools, pkg_resources | **25 MB** |
+| pyarrow C++ headers | **6 MB** |
+
+**954 MB → 721 MB. DoD met, 79 MB of headroom, UI stack untouched.**
+`standalone` is 829 MB. Verified after stripping: every library imports,
+numpy/scipy/pandas/pyarrow all compute, the container serves (healthy in ~2 s
+under `--memory=2g`), and ordinary, known-item and negated queries return
+exactly what the host returns.
+
+`__pycache__` is another 141 MB and is **deliberately kept**:
+`PYTHONDONTWRITEBYTECODE=1` is set in the runtime stage, so deleting it makes
+every cold start recompile the dependency tree, and App Service F1 has no
+Always On. Available if the space is ever worth more than the latency.
+
+**The lock is now verified on the target platform.** Freezing inside the image
+(linux/CPython 3.11.16) produced an identical set to the Windows/3.10
+resolution but for `exceptiongroup` -- a backport 3.11 does not need, harmless
+as a constraint -- and the project's own self-reference, which was excluded.
+`make lock` regenerates it from inside the image.
+
+**Still open:** a browser-driven search. No browser driver is installed, and
+adding playwright to the dev extras was not done unasked. The app was verified
+serving (health 200, page renders) and its exact search call was driven
+in-process across all three query types, in both union and no-union modes --
+which is not the same thing as a real browser, and is not claimed to be.

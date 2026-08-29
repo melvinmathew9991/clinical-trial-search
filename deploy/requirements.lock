@@ -11,13 +11,18 @@
 # these versions, and fails loudly on a genuine conflict rather than silently
 # resolving past it.
 #
-# RESOLVED ON: Windows / CPython 3.10 (the development machine).
-# The image is linux/CPython 3.11. Markers differ between the two -- `colorama`
-# below is Windows-only and simply will not install on linux, which pip handles,
-# but a package that is linux-only would be *missing* here.
+# RESOLVED ON: Windows / CPython 3.10, and VERIFIED against the image on
+# linux / CPython 3.11.16 (2026-08-29). Freezing inside the built image gave an
+# identical set but for two entries:
 #
-# Regenerate on the target platform before relying on it for a production
-# deploy: `make lock` builds the image and freezes from inside it.
+#   exceptiongroup==1.3.1   a backport Python < 3.11 needs and 3.11 does not.
+#                           Kept: a constraint only binds if something asks for
+#                           the package, so it is correct on both.
+#   medsearch @ file:///build   the project itself. Excluded -- a constraint
+#                           file pins dependencies, not the thing being built.
+#
+# Regenerate with `make lock`, which freezes from inside the image rather than
+# from a developer's machine.
 altair==6.2.2
 annotated-doc==0.0.5
 annotated-types==0.8.0

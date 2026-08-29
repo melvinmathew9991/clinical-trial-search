@@ -271,16 +271,35 @@ contains no secret and no `data/`.
 |---|---|
 | `docker run --memory=2g` serves search | ✅ healthy in <25 s; union query returns 16 documents; peak RSS **662 MB** inside the 2 GB limit |
 | No secret, no `data/` in the image | ✅ verified — the four data directories exist and are empty, `models/` is empty, no SAS token or key anywhere in the layers |
-| Image < 800 MB | ❌ **941 MB** (summed layers; `docker images` reports 1.25 GB under the containerd store) |
+| Image < 800 MB | ✅ **721 MB** (summed layers) as of 2026-08-29, from a 954 MB baseline. `standalone` is 829 MB, artefacts included |
 
-**Where the 941 MB goes:** the venv is **725 MB** of it — pyarrow 156, scipy
-143, pandas 76, gensim 58, numpy 79, streamlit 35, pydeck 23 — on a ~175 MB
-`python:3.11-slim` base, plus 37 MB of NLTK corpora. Trimming NLTK to English
-already saved 64 MB (100 → 37) in this session. **The remaining 141 MB is not
-reachable by packaging:** pyarrow and pydeck are Streamlit's, scipy is gensim's.
-Getting under 800 MB means changing the UI stack, not the Dockerfile. The
-target was written before anything was built — it needs re-setting against a
-measurement or the clause needs re-scoping.
+**Where the 941 MB went, and why that reading was wrong.** The venv was
+**725 MB** of it — pyarrow 156, scipy 143, pandas 76, gensim 58, numpy 79,
+streamlit 35, pydeck 23 — on a `python:3.11-slim` base plus 37 MB of NLTK
+corpora. This section previously concluded that *"the remaining 141 MB is not
+reachable by packaging"* and that meeting the DoD *"means changing the UI stack,
+not the Dockerfile"*.
+
+**That conclusion was reached without measuring what was inside those packages,
+and it was wrong.** Measured inside the image on 2026-08-29:
+
+| What | Size | Reachable? |
+|---|---|---|
+| Bundled pytest suites in scipy, numpy, pandas | **132 MB** | yes — nothing at runtime imports them |
+| Debug symbols across 272 `.so` files (341 MB of shared objects) | **~70 MB** | yes — `strip --strip-unneeded` |
+| `pip`, `setuptools`, `pkg_resources` | **25 MB** | yes — nothing installs at runtime |
+| pyarrow's C++ headers | **6 MB** | yes — for building against Arrow, not importing it |
+| `__pycache__` | 141 MB | **deliberately kept** — see below |
+
+**Result: 954 MB → 721 MB, DoD met with 79 MB of headroom, and the UI stack
+untouched.** Every library still imports, and the container serves and answers
+ordinary, known-item and negated queries identically to the host.
+
+`__pycache__` is kept on purpose. `PYTHONDONTWRITEBYTECODE=1` is set in the
+runtime stage, so deleting it would make *every* container start recompile the
+whole dependency tree — a repeated cost on App Service F1, which has no
+Always On and cold-starts routinely. It is available if 141 MB is ever needed
+more than start-up latency.
 
 **One real defect found by building it, invisible to every test:** the union
 retriever — the shipped default — died on its first query with
@@ -390,7 +409,7 @@ clone blew the 260-character `MAX_PATH` limit while pip was unpacking
 
 **On tagging `v1.0.0`: not yet, and this plan is not the authority.** A `1.0.0`
 tag conventionally asserts stability, and the project's own documents currently
-record an unmet image-size DoD (941 MB against < 800 MB), no Azure deployment,
+record no Azure deployment,
 no search ever driven through the UI in a browser, an evaluation set 42 % of
 whose judgements are model-generated with no clinician review, and one flaky
 guard test with no root cause. Tagging that `1.0.0` would assert something the
