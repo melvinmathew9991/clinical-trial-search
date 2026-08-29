@@ -14,7 +14,7 @@ import pytest
 
 from medsearch.config import Settings
 from medsearch.data.loader import load_corpus
-from medsearch.embeddings.base import TrainingParams
+from medsearch.embeddings.base import ModelKind, TrainingParams
 from medsearch.embeddings.document import DocumentEmbedder, l2_normalize
 from medsearch.exceptions import ArtefactMismatchError, SchemaValidationError
 from medsearch.search.index import DocumentIndex
@@ -213,6 +213,73 @@ class TestScaledMemoryFloor:
         message = str(exc_info.value)
         assert "already sampled" in message
         assert "run a reduced profile with `--limit 2000`" not in message
+
+
+class TestFastTextMemoryGuardScales:
+    """The same flat-floor defect as :class:`TestScaledMemoryFloor`, in a second
+    place that was missed.
+
+    ``runtime.require_memory`` learned to scale its floor with the documents
+    actually processed; ``trainer._check_memory_budget`` kept a bare ``+ 0.5``
+    and so demanded as much free RAM to train 20 documents as to train 10,666.
+    That is what made ``TestCrossModelGuard`` intermittent -- it failed only
+    when the machine happened to be under memory pressure, which looked like
+    test-order dependence and was not.
+
+    The message was unreadable too: the headroom was invisible, so a refusal
+    printed as "peak is ~0.00 GB but only 0.42 GB is available", which reads as
+    an arithmetic bug rather than a memory limit.
+    """
+
+    @staticmethod
+    def _budget(free_gb: float, documents: int, monkeypatch: pytest.MonkeyPatch) -> None:
+        from medsearch.embeddings import trainer
+
+        monkeypatch.setattr(trainer, "available_memory_gb", lambda: free_gb)
+        trainer._check_memory_budget(ModelKind.FASTTEXT, TrainingParams(), documents)
+
+    def test_a_toy_corpus_needs_less_than_the_full_one(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 0.42 GB free is the figure CI actually failed at.
+        self._budget(0.42, 20, monkeypatch)
+
+    def test_the_full_corpus_still_enforces_a_real_floor(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from medsearch.exceptions import ResourceError
+
+        with pytest.raises(ResourceError):
+            self._budget(0.42, 10_666, monkeypatch)
+
+    def test_unknown_document_count_budgets_the_full_corpus(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Zero means unknown, and must fail safe rather than permissive."""
+        from medsearch.exceptions import ResourceError
+
+        with pytest.raises(ResourceError):
+            self._budget(0.42, 0, monkeypatch)
+
+    def test_the_message_shows_where_the_requirement_comes_from(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from medsearch.exceptions import ResourceError
+
+        with pytest.raises(ResourceError) as exc_info:
+            self._budget(0.10, 10_666, monkeypatch)
+        message = str(exc_info.value)
+        assert "n-gram matrix" in message
+        assert "headroom" in message
+        assert "10,666 documents" in message
+
+    def test_skipgram_is_not_subject_to_the_fasttext_budget(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from medsearch.embeddings import trainer
+
+        monkeypatch.setattr(trainer, "available_memory_gb", lambda: 0.0)
+        trainer._check_memory_budget(ModelKind.SKIPGRAM, TrainingParams(), 10_666)
 
 
 class TestSampledIndexIsDeclared:

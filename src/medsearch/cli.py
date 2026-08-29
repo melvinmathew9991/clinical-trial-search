@@ -331,7 +331,7 @@ def search(
     union: bool | None = typer.Option(
         None,
         "--union/--no-union",
-        help="Return the union of keyword and semantic results (~18 docs, recall 0.955).",
+        help="Return the union of keyword and semantic results (~18 docs, recall 0.702).",
     ),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
 ) -> None:

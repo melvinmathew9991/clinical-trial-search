@@ -1,32 +1,34 @@
 """Union retrieval: widen the result set instead of reranking it.
 
-The evaluation (PRD §8.3) established two facts that look contradictory:
+The evaluation established two facts that look contradictory:
 
-* **Rank fusion is worthless here.** Reciprocal Rank Fusion over the TF-IDF and
-  embedding rankings scores 0.648 against TF-IDF's 0.648 — a difference of
-  +0.0005, p = 0.98.
-* **The methods are genuinely complementary.** 326 of the 496 relevant
-  documents the embeddings retrieve (66%) are ones TF-IDF never returns, and
-  the union of both top-10 lists reaches 0.955 recall against depth-matched
-  TF-IDF's 0.715.
+* **Rank fusion cannot beat the lexical ranker at a fixed budget.** Truncated
+  to ten documents the union scores nDCG@10 0.789 against BM25's 0.799 and
+  TF-IDF's 0.797 — level, not ahead.
+* **The methods are genuinely complementary.** The union of both top-10 lists
+  reaches Recall@10 **0.702** and R-precision **0.639** on the re-judged eval
+  set, against BM25's 0.471 and 0.458.
 
 They reconcile once you notice the budget: at ten results a fusion must *drop*
-a TF-IDF hit to admit an embedding hit, and TF-IDF's are more often relevant.
-The complementarity is real and unusable by reranking at the same time.
+a lexical hit to admit an embedding hit, and the lexical hits are more often
+relevant. The complementarity is real and unusable by reranking at the same
+time.
 
 So this module does not rerank. It returns the **union** of both top-*n* lists —
-about twice as many documents — trading precision for a large, measured recall
-gain. That is a product decision about how many trials to put in front of a
-researcher, not a modelling one.
+about 17.8 documents rather than 10 — buying that recall with a wider result
+set. That is a product decision about how many trials to put in front of a
+researcher, not a modelling one. See PRD §8.4.
 
-Ordering within the union is by Reciprocal Rank Fusion. It does not affect
-recall at the full budget, but it puts documents both methods agree on first,
-which is what a reader wants to see at the top.
+Ordering within the union is by weighted Reciprocal Rank Fusion. It does not
+affect recall at the full budget, but it decides what a reader sees first, and
+two details of it are load-bearing — see :data:`KEYWORD_WEIGHT` and
+:meth:`UnionRetriever._rank`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 import pandas as pd
 
@@ -39,6 +41,15 @@ logger = get_logger(__name__)
 #: RRF damping constant. 60 is the value from Cormack et al. (2009) and the
 #: usual default; results are insensitive to it over a wide range.
 RRF_K = 60
+
+#: Weight on the keyword run's RRF contribution. The lexical ranker wins
+#: Precision@1 in every measured stratum -- entity 0.909 vs 0.636, code 1.000
+#: vs 0.000, negation 0.625 vs 0.250 -- so an unweighted fusion gives the
+#: embedding run more say at the top than it has earned. A sweep over
+#: 1.0/1.5/2.0/3.0 saturates at 1.5 (2.0 scores identically, 3.0 slightly
+#: worse): main-set nDCG@10 0.753 -> 0.762 and R-precision 0.622 -> 0.639, with
+#: Recall@10 unchanged at 0.702 because reordering cannot change the set.
+KEYWORD_WEIGHT = 1.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,8 +94,27 @@ class UnionRetriever:
         """Number of searchable documents."""
         return self._engine.size
 
+    #: Tie-break order: consensus first, then keyword-only, then
+    #: embedding-only. Two runs that share no documents award identical RRF
+    #: scores at identical ranks, and a plain ``sorted`` breaks that tie by
+    #: insertion order -- which handed rank 1 to the embedding run on every
+    #: known-item query in the round-3 ``code`` stratum, dropping its MRR@10 to
+    #: 0.500 while the lexical ranker alone scored 1.000. This makes the
+    #: fallback explicit and deterministic instead.
+    _SOURCE_PRIORITY: ClassVar[dict[tuple[str, ...], int]] = {
+        ("embedding", "keyword"): 0,
+        ("keyword",): 1,
+        ("embedding",): 2,
+    }
+
     def _rank(self, query: str, per_method: int) -> list[UnionHit]:
-        """Merge both rankings into one RRF-ordered union."""
+        """Merge both rankings into one weighted-RRF union.
+
+        Documents are ordered by descending fused score, ties broken by
+        :attr:`_SOURCE_PRIORITY`. Consensus documents lead on score alone for
+        any ``per_method`` up to 41; the tie-break is what makes the order below
+        that threshold reproducible rather than dependent on dict insertion.
+        """
         scores: dict[str, float] = {}
         sources: dict[str, set[str]] = {}
 
@@ -96,12 +126,16 @@ class UnionRetriever:
         tokens = self._engine.preprocess(query)
         for rank, hit in enumerate(self._baseline.search(tokens, top_n=per_method), start=1):
             trial_id = self._trial_ids[hit.row_id]
-            scores[trial_id] = scores.get(trial_id, 0.0) + 1.0 / (RRF_K + rank)
+            scores[trial_id] = scores.get(trial_id, 0.0) + KEYWORD_WEIGHT / (RRF_K + rank)
             sources.setdefault(trial_id, set()).add("keyword")
+
+        def _order(item: tuple[str, float]) -> tuple[float, int]:
+            trial_id, score = item
+            return (-score, self._SOURCE_PRIORITY[tuple(sorted(sources[trial_id]))])
 
         return [
             UnionHit(trial_id=tid, score=score, found_by=tuple(sorted(sources[tid])))
-            for tid, score in sorted(scores.items(), key=lambda kv: -kv[1])
+            for tid, score in sorted(scores.items(), key=_order)
         ]
 
     def search(self, query: str, *, per_method: int = 10) -> SearchResponse:

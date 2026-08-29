@@ -87,6 +87,12 @@ app:  ## Launch the Streamlit UI on :8501
 search:  ## Ad-hoc search: make search Q="lung failure"
 	$(BIN)/medsearch search "$(Q)"
 
+.PHONY: lock
+lock:  ## Regenerate deploy/requirements.lock from inside the image (linux/py3.11)
+	docker build --load --target runtime -t medsearch:lockgen -f deploy/docker/Dockerfile .
+	@echo "Freeze runs against the pre-trim stage; the shipped image has no pip."
+	docker run --rm --entrypoint sh medsearch:lockgen -c 	  "/opt/venv/bin/pip freeze --all | grep -viE '^(pip|setuptools|wheel)==' | grep -v '^medsearch' | sort -f"
+
 .PHONY: evaluate
 evaluate:  ## Run the evaluation suite and write reports/evaluation.json
 	$(BIN)/medsearch evaluate
@@ -115,12 +121,12 @@ lengths:  ## Enforce the Rules.md section 3 function-length caps
 	$(BIN)/python scripts/check_function_length.py
 
 .PHONY: test
-test:  ## Run the fast test suite with coverage
+test:  ## Run the fast test suite (unit only, no coverage -- see test-all)
 	$(BIN)/pytest
 
 .PHONY: test-all
 test-all:  ## Full suite including integration, with the 80% coverage gate
-	$(BIN)/pytest -m "" --cov-fail-under=80
+	$(BIN)/pytest -m "" --cov=medsearch --cov-report=term-missing --cov-fail-under=80
 
 .PHONY: check
 check: lint type layers lengths test-all  ## Everything CI runs, locally

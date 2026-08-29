@@ -9,7 +9,10 @@ written about -- so this reports each separately and never sums them.
 
 Metrics come from ``medsearch.pipelines.evaluate`` unchanged: this script slices
 the fixture and delegates, so the numbers are produced by the same code that
-writes ``reports/evaluation.json`` and are comparable with it.
+writes ``reports/evaluation.json`` and are comparable with it. It passes
+``report_name=None``, because a per-stratum score must not overwrite the
+main report -- it did, until 2026-08-29, leaving ``evaluation.json`` holding
+whichever stratum ran last.
 
 Run::
 
@@ -51,7 +54,7 @@ def main() -> int:
             subset = [q for q in queries if q["stratum"] == stratum]
             path = Path(tmp) / f"{stratum}.json"
             path.write_text(json.dumps({"queries": subset}), encoding="utf-8")
-            result = run_evaluation(settings, eval_path=path, k_values=K_VALUES)
+            result = run_evaluation(settings, eval_path=path, k_values=K_VALUES, report_name=None)
             report["strata"][stratum] = {
                 "queries": len(subset),
                 "mean_relevant": round(sum(len(q["relevant"]) for q in subset) / len(subset), 1),

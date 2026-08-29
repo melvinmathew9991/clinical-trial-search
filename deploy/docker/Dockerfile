@@ -20,11 +20,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./
+COPY deploy/requirements.lock ./deploy/requirements.lock
 COPY src ./src
 
+# Installed against the lock as a *constraint*: pyproject decides what is
+# needed, the lock decides which versions, and a genuine conflict fails the
+# build instead of silently resolving to something new. Ranges alone meant
+# every rebuild re-resolved gensim/scipy/pandas and happened to work.
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip \
-    && /opt/venv/bin/pip install ".[app]"
+    && /opt/venv/bin/pip install ".[app]" --constraint deploy/requirements.lock
 
 # Bake NLTK corpora into the image so the container never downloads at
 # startup. Artefacts (models, index) are deliberately NOT baked -- they are
@@ -45,6 +50,30 @@ RUN /opt/venv/bin/python -m medsearch.runtime --download-nltk \
     && rm -f /root/nltk_data/tokenizers/punkt.zip \
              /root/nltk_data/tokenizers/punkt_tab.zip \
              /root/nltk_data/corpora/stopwords.zip
+
+# Trim the virtualenv before the runtime stage copies it. Every figure here was
+# measured inside this image, not estimated:
+#
+#   bundled test suites   132 MB   scipy/numpy/pandas ship their pytest suites
+#   pip + setuptools       25 MB   nothing installs anything at runtime
+#   pyarrow C++ headers     6 MB   for building against Arrow, not importing it
+#   272 unstripped .so    341 MB   debug symbols a serving process never reads
+#
+# Phases.md recorded that the remaining 141 MB over the DoD was 'not reachable
+# by packaging' and that meeting it 'means changing the UI stack'. That was
+# written without measuring these: the test suites alone very nearly cover it.
+#
+# __pycache__ is another 141 MB and is deliberately KEPT. PYTHONDONTWRITEBYTECODE
+# is set in the runtime stage, so deleting it would make every container start
+# recompile the whole dependency tree -- a repeated cost on App Service F1, which
+# has no Always On and therefore cold-starts routinely.
+RUN find /opt/venv -type d \
+         \( -name tests -o -name test \) -prune -exec rm -rf {} + \
+    && rm -rf /opt/venv/lib/python3.11/site-packages/pip \
+              /opt/venv/lib/python3.11/site-packages/pkg_resources \
+              /opt/venv/lib/python3.11/site-packages/setuptools \
+              /opt/venv/lib/python3.11/site-packages/pyarrow/include \
+    && find /opt/venv -name '*.so*' -type f -exec strip --strip-unneeded {} + || true
 
 # ---------------------------------------------------------------- runtime
 FROM python:3.11-slim AS runtime

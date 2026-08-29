@@ -91,15 +91,17 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------- search
     top_n: int = Field(default=10, ge=1, le=100)
     #: Return the union of the embedding and keyword rankings rather than
-    #: the embedding ranking alone. Lifts Recall@10 from 0.648 to 0.955 at
-    #: the cost of showing ~18 results instead of 10 (PRD 8.3).
+    #: the embedding ranking alone. On the re-judged eval set it lifts
+    #: Recall@10 from BM25's 0.471 to 0.702 and R-precision from 0.458 to
+    #: 0.639, at the cost of showing ~18 results instead of 10 (PRD 8.4).
     union_retrieval: bool = True
     #: FastText, not Skip-gram. The two are indistinguishable as standalone
     #: rankers (p = 0.28 / 0.86 / 1.00), but under the union that ships they
-    #: are not: FastText reaches Recall@10 0.955 against Skip-gram's 0.927
-    #: (+0.028, 95% CI [+0.005, +0.052], p = 0.019, paired over 97 queries),
-    #: with MRR@10 no worse (+0.030, p = 0.16). It costs a 29.3 MB artefact
-    #: against 10.2 MB -- both far inside the 150 MB cap (PRD 8.4).
+    #: are not: FastText reaches Recall@10 0.702 against Skip-gram's 0.687 and
+    #: nDCG@10 0.762 against 0.749 on the re-judged set -- the same direction as
+    #: the round-1 measurement (+0.028, 95% CI [+0.005, +0.052], p = 0.019),
+    #: not re-tested for significance. It costs a 31.9 MB artefact against
+    #: 12.8 MB -- both far inside the 150 MB cap (PRD 8.4).
     default_model: ModelName = "fasttext"
     default_field: FieldName = "abstract"
 

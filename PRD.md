@@ -87,6 +87,8 @@ Priority: **P0** = v1 blocker · **P1** = v1 target · **P2** = post-v1.
 | F-10 | Preprocessing is a pure function — no mutation of the caller's DataFrame | P0 |
 | F-11 | Compile every regex once at module import, not per call | P0 |
 | F-12 | Support a domain allowlist so negation terms (`no`, `not`) survive stopword removal | P2 |
+| F-42 | Answer a registry-id query with that trial, at rank 1 | **P0** |
+| F-43 | Honour free-standing negation (`not X`, `without X`) as an exclusion, not a term | P2 |
 
 ### Embeddings
 | ID | Requirement | Priority |
@@ -383,19 +385,47 @@ serves.
 
 ### 8.4 What ships: the union, FastText, and the defaults left alone
 
-**The union ships, on by default.** On the re-judged set: Recall@10 **0.702**
-against the 0.70 target, MRR@10 0.890 against 0.45, p95 122 ms against 300 ms.
-It is switchable (`--no-union`, and a sidebar toggle) because it buys that
-recall with ~17.8 results instead of 10 and gives up Precision@1 (0.830 against
-TF-IDF's 0.918) and nDCG@10 (0.746 against 0.797). For a researcher who must
-not miss a relevant trial, recall is the metric that matters; for anyone who
-wants the tightest, best-ranked list, the toggle is there.
+**The union ships, on by default — decision re-made 2026-08-29 and confirmed.**
+On the re-judged set: Recall@10 **0.702** against the 0.70 target, R-precision
+**0.639**, MRR@10 0.923 against the 0.45 target, nDCG@10 0.762, p95 128 ms
+against 300 ms. It is switchable (`--no-union`, and a sidebar toggle) because it
+buys that recall with ~17.8 results instead of 10.
 
-> **This decision is now open again.** It was made when the union scored 0.955
-> against TF-IDF's 0.648 — a margin that turned out to be pool membership. At
-> 0.702 against 0.459, with the ranking metrics pointing the other way, "ship
-> the wider net by default" is a product call that deserves re-making rather
-> than inheriting. See [EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) §7.
+The decision was reopened when re-judging cut the union's margin from 0.955-vs-0.648
+to 0.702-vs-0.459 and the ranking metrics appeared to point the other way. Two
+things settled it.
+
+**First, the strongest argument against the union was a defect, not a property.**
+The known-item damage recorded in EVALUATION_AUDIT §8 Result 4 — the union
+halving MRR@10 to 0.500 where the lexical ranker scored 1.000 — came from an
+exact tie in the fusion: two runs sharing no documents award identical RRF
+scores at identical ranks, and `sorted` settled it by dict insertion order,
+which put the embedding run first. Weighting the keyword run (`KEYWORD_WEIGHT
+= 1.5`) and breaking remaining ties explicitly takes the `code` stratum to
+**MRR@10 1.000 and nDCG@10 1.000**, level with the lexical baselines, and lifts
+every other stratum too. Recall is unchanged throughout, because reordering
+cannot change a set.
+
+**Second, the nDCG comparison was never like-for-like.** The union is scored to
+depth 20, so its nDCG ideal sums ~17 slots against the baselines' 10
+(`evaluate.py`). Truncated to an equal ten-document budget the union scores
+**nDCG@10 0.789** against BM25's 0.799 and TF-IDF's 0.797 — level, not behind.
+
+| method | docs | nDCG@10 | MRR@10 | R@10 | R-prec |
+|---|---|---|---|---|---|
+| BM25 | 10 | **0.799** | 0.909 | 0.471 | 0.458 |
+| TF-IDF | 10 | 0.797 | **0.952** | 0.459 | 0.449 |
+| union-fasttext, truncated to 10 | 10 | 0.789 | 0.923 | 0.459 | 0.451 |
+| **union-fasttext (shipped)** | 17.8 | 0.762 | 0.923 | **0.702** | **0.639** |
+| fasttext alone | 10 | 0.662 | 0.818 | 0.353 | 0.351 |
+
+So the honest statement is the one this section always should have made: **the
+union is not a better ranker, it is a wider net, and it no longer costs ranking
+quality to use.** The remaining trade is one-directional — 17.8 documents for
+Recall@10 0.702 and R-precision 0.639, against 10 documents for 0.471 and
+0.458. For the researcher §2 describes, who must not miss a relevant trial,
+that is the right default; for anyone wanting the tightest list, the toggle is
+there. See [EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) §§7–9.
 
 **FastText is the default model, not Skip-gram.** As standalone rankers the two
 are indistinguishable (p = 0.28 / 0.86 / 1.00, §8.1), which is why the choice
@@ -441,6 +471,44 @@ unreplicated run each. **Defaults stay as they are.** Promoting `window=10` or
 `epochs=15` on this evidence would be reading noise as signal — the same
 mistake §8.2 and §8.3 were run to avoid, and the union numbers they produce
 (+0.013 at best) are inside the noise band anyway.
+
+### 8.5 Two capabilities added before deployment
+
+**F-42 — search by trial id.** Measured over 60 real ids drawn five per registry
+from all twelve registries, the system returned the requested trial **0 times**:
+not at rank 1, not in the top 10, not at all. Every row carries a unique
+`Trial ID`, retrieval ran on `abstract`, and nothing indexed the identifier, so
+the most basic known-item operation a trial-search tool offers did not work.
+
+An identifier is a key, so it gets a lookup that precedes the ranking, and
+trials whose abstracts cite the id follow directly below. **0/60 → 60/60 at
+rank 1.** The ground truth is exact — ids are unique — so this is the only
+measurement in the project with no annotator provenance to declare.
+
+The cost is stated rather than removed: round 3's `code` stratum, which scores
+the *different* question of which trials cite an id, falls from MRR@10 1.000 to
+0.667, because its gold lists citing trials only and excludes the queried trial
+by construction. Its judgements were **not** rewritten to hide that. See
+EVALUATION_AUDIT §10.1.
+
+**F-43 — free-standing negation.** EVALUATION_AUDIT §8 Result 5 established that
+no additive feature scheme can express negation, and bigrams were built and
+rejected on measurement. The query now carries an operator instead: cue-and-scope
+detection in the NegEx style, run on the query to find what is excluded and on
+the *document* to separate an abstract that asserts the concept from one that
+denies it. Overlap between a query and its negated twin falls **0.55 → 0.33**,
+entirely on the two free-standing pairs; the two prefix pairs, which already
+worked by morphological substitution, do not move.
+
+It fires on **0 of the 97 main-set queries** and leaves every headline number
+unchanged. On the stratum it targets it buys P@1 0.375 → 0.438 and R-precision
+0.427 → 0.448 at a cost of Recall@10 0.643 → 0.560, because filtering removes
+documents. Both halves of that trade are recorded in EVALUATION_AUDIT §10.2.
+
+**Limits.** Two queries drive the negation measurement, and the cue lexicon was
+extended after inspecting failures on them, so its coverage on unseen negations
+is unmeasured. The known-item result carries no such caveat: n = 60, exact
+ground truth.
 
 ## 9. Constraints & assumptions
 
