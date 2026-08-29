@@ -206,6 +206,14 @@ So the union is not a better ranker. It is a **wider net**, and whether that is
 worth it is the product question PRD §8.4 already framed — now with the
 ranking cost made explicit rather than hidden by a single metric.
 
+> **Refined 2026-08-29.** "Not a better ranker" holds; "worse ranker" does not
+> follow from this table. The union is scored to depth 20, so its nDCG ideal
+> sums ~17 slots against the baselines' 10 — the comparison is not
+> like-for-like. Truncated to an equal ten-document budget, and with the §9 fix
+> applied, the union scores **nDCG@10 0.789** against BM25's 0.799. Level. The
+> post-fix full-budget figures are nDCG@10 **0.762** and R-precision **0.639**
+> (was 0.746 / 0.616).
+
 The Recall@10 ceiling is now **0.626** (was 0.879): with 17.4 relevant
 documents per query on average, ten slots cannot hold them. BM25 at 0.471 is
 **75 % of attainable**.
@@ -330,6 +338,16 @@ This is a concrete cost of shipping the union by default, on a query type users
 of a trial-search tool will certainly issue, and it belongs in the PRD §8.4
 decision.
 
+> **Corrected 2026-08-29 — this was a defect in the fusion, not a property of
+> the union.** The two runs share no documents on these queries, so both award
+> the identical RRF score `1/(60+rank)` at every rank, and `sorted` broke the
+> tie by dict insertion order — which is the embedding run, because its loop
+> runs first. Every code query placed an irrelevant embedding document at rank
+> 1 and the relevant keyword document at rank 2, at byte-identical scores.
+> Weighting the keyword run and breaking the remainder explicitly takes this
+> stratum to **MRR@10 1.000, nDCG@10 1.000, R-precision 1.000** — level with
+> the lexical baselines. See §9. The measurements above are left as recorded.
+
 ### A capability gap this exposed
 
 Only **71 of 10,666 abstracts** contain any registry code, because the ids live
@@ -420,22 +438,111 @@ Most of the methodology is better than typical, and the audit did not disturb it
 
 The problem was never rigour. It was a **relative** methodology used to support
 an **absolute** claim.
+## 9. The fusion had a defect, and fixing it settled the product decision
+
+*2026-08-29.*
+
+Section 8 Result 4 read a symptom as a property. `UnionRetriever._rank` fused
+the two rankings with unweighted RRF and ordered by score alone. When the runs
+are **disjoint** — which is exactly what happens on a known-item query, where
+the lexical run holds the answer and the embedding run holds nothing — every
+document scores `1/(RRF_K + rank)`, so the two runs' rank-1 documents tie at
+byte-identical `0.016393`. Python's `sorted` is stable, so the tie fell to dict
+insertion order, and the embedding loop populates the dict first.
+
+Observed directly, on all three `code` queries:
+
+```
+1. NCT04397562   score=0.016393   by=embedding
+2. NCT04853927   score=0.016393   by=keyword     RELEVANT
+```
+
+### The fix
+
+Two changes, both in `search/hybrid.py`:
+
+* **Weight the keyword run** (`KEYWORD_WEIGHT = 1.5`). The lexical ranker wins
+  Precision@1 in every stratum measured — entity 0.909 vs 0.636, code 1.000 vs
+  0.000, negation 0.625 vs 0.250 — so an unweighted fusion gives the embedding
+  run more say at the top than it earned. A sweep over 1.0 / 1.5 / 2.0 / 3.0
+  saturates at 1.5; 2.0 is identical and 3.0 slightly worse.
+* **Break remaining ties explicitly**: consensus, then keyword-only, then
+  embedding-only, so the order never depends on insertion again.
+
+### Effect, and what it does not touch
+
+**Recall is unchanged everywhere**, on every stratum and the main set —
+reordering cannot change a set. That is the control: any metric that moved,
+moved because of ranking alone.
+
+| union-fasttext | MRR@10 | nDCG@10 | R-precision | R@10 |
+|---|---|---|---|---|
+| main 97-query | 0.890 → **0.923** | 0.746 → **0.762** | 0.616 → **0.639** | 0.702 → 0.702 |
+| `entity` | 0.788 → **0.864** | 0.725 → **0.751** | 0.590 → **0.604** | 0.791 → 0.791 |
+| `code` | 0.500 → **1.000** | 0.649 → **1.000** | 0.722 → **1.000** | 1.000 → 1.000 |
+| `negation` | 0.513 → **0.532** | 0.519 → **0.529** | 0.372 → **0.427** | 0.643 → 0.643 |
+
+### The depth mismatch, which is the other half of the story
+
+`_update` scores the union to `k * depth_factor` with `depth_factor = 2`. Two
+consequences were being misread:
+
+1. **The union rows' "P@1" is P@2.** That is why an arithmetically impossible
+   0.500 appeared over n = 3 queries, and why it stays at 0.833 after the fix
+   even though the relevant document is now at rank 1 — the second slot holds
+   an embedding document that cannot be relevant.
+2. **nDCG@10 is not comparable across depth factors.** The union's ideal DCG
+   sums `min(|relevant|, 20)` ≈ 17 slots against the baselines' 10, so the
+   union is normalised against a taller ideal. Scoring the union truncated to
+   ten documents removes the mismatch:
+
+| method | docs | nDCG@10 | MRR@10 | R@10 | R-prec |
+|---|---|---|---|---|---|
+| BM25 | 10 | **0.799** | 0.909 | 0.471 | 0.458 |
+| TF-IDF | 10 | 0.797 | **0.952** | 0.459 | 0.449 |
+| union-fasttext @10 | 10 | 0.789 | 0.923 | 0.459 | 0.451 |
+| union-fasttext (shipped) | 17.8 | 0.762 | 0.923 | **0.702** | **0.639** |
+| fasttext | 10 | 0.662 | 0.818 | 0.353 | 0.351 |
+
+At an equal budget the union is **level** with the lexical baselines, not
+behind them. So the standing conclusion — the union is a wider net rather than
+a better ranker — survives intact, but the claim that it *costs* ranking
+quality does not.
+
+### The decision
+
+**Ship the union on by default** (PRD §8.4). The trade is one-directional:
+17.8 documents for Recall@10 0.702 and R-precision 0.639, against 10 documents
+for 0.471 and 0.458, with ranking now level at equal depth.
+
+### A caveat on this section's own numbers
+
+The fix was measured on the same eval set it was diagnosed from. The `code`
+stratum result needs no inference — its ground truth is exact and the effect is
+1.000 against 0.500 — but the main-set deltas (+0.016 nDCG, +0.023 R-precision)
+are single unreplicated runs and were **not** significance-tested. They are
+also inside the ±0.010–0.014 retraining noise band §8.4 of the PRD documents
+for effects of this size. The defect is unambiguous and the fix is
+directionally right on every stratum; the magnitude on the main set is not
+established.
+
 ## Current status of the numbers
 
-*Updated 2026-08-28, after round 2. Everything above §7 is round-1 history and
-is left as written. This table is what currently holds.*
+*Updated 2026-08-29, after §9. Everything above §7 is round-1 history and is
+left as written; §§7–8 carry inline correction notes where §9 superseded them.
+This table is what currently holds.*
 
 | Claim | Status |
 |---|---|
 | The lexical baselines beat the embeddings standalone | ✅ **holds — and now on an unbiased pool**: TF-IDF 0.459 / BM25 0.471 against FastText 0.353 / Skip-gram 0.351 |
 | The two methods are complementary (66 % unique) | ✅ holds — an overlap measurement, unaffected by pooling |
 | Union Recall@10 = 0.955 | ❌ **withdrawn** — `recall@pool`, and pool-bound. Re-judged: **0.702** |
-| PRD §8 DoD (Recall@10 ≥ 0.70) met | ⚠️ **met on the number, not on the reading** — union-fasttext 0.702, but from 17.8 documents against a depth-10 ceiling of 0.626, and by nDCG@10 it loses to both lexical baselines |
+| PRD §8 DoD (Recall@10 ≥ 0.70) met | ⚠️ **met on the number, with the reading stated** — union-fasttext 0.702 from 17.8 documents against a depth-10 ceiling of 0.626. The nDCG deficit was partly a defect and partly a depth mismatch: at an equal 10-document budget the union scores 0.789 against BM25's 0.799 (§9) |
 | TF-IDF beats BM25 (0.615 vs 0.403) | ❌ **withdrawn** — the gap was pool membership. Re-judged 0.459 vs 0.471: Δ +0.0116, p = 0.47, **equivalent** |
 | Recall@10 ceiling = 0.879 | ❌ **superseded** — 0.626 at depth 10, 0.951 at depth 20, with 17.4 relevant documents per query |
 | Tokeniser fix improves retrieval | ✅ **CONFIRMED — §8.** Registry-code Recall@10 0.44 → 1.00 (TF-IDF) and 0.33 → 1.00 (BM25); `CD4` and `CD8` returned an identical top-10 under the old chain and are separated under the new one |
 | Negation fix improves retrieval | ⚠️ **half-refuted — §8.** The gain comes from hyphen-joining (`nonhospitalized`, idf 6.45), not from `CLINICAL_KEEP_WORDS`. Free-standing `not` / `without` is retained but inert at idf 2.18 / 3.16, and the two pairs that turn on it are unchanged |
-| The union is safe to ship by default | ⚠️ **contested — §8.** On known-item code queries the union halves P@1 against the lexical baselines (0.500 vs 1.000): the embedding half contributes a document that cannot be relevant |
+| The union is safe to ship by default | ✅ **resolved — §9.** The known-item damage was an insertion-order tie-break, now fixed: the `code` stratum reaches MRR@10 and nDCG@10 1.000. Recall unchanged at 0.702; ships on by default (PRD §8.4) |
 | The judgements are human ground truth | ⚠️ **no** — 986 human, **705 model-generated** (κ = 0.800 against the human labels). That provenance travels with every number in this table |
 
 ## What is closed, and what remains
@@ -469,11 +576,11 @@ Remaining, in order:
    annotator, not for a clinician. Single-source judgements still carry no
    external error bar, and 705 of them were produced by the same class of
    system being scored.
-3. **The product decision, now with one more input.** Recall@10, nDCG@10 and
-   R-precision already disagreed about the union. §8 Result 4 adds that on
-   known-item queries the union *halves* precision at rank 1 against a
-   baseline that answers them perfectly. Whether to ship 17.8 documents or 10
-   is PRD §8.4's question, and it is a product call, not a modelling one.
+3. ~~**The product decision.**~~ **Closed 2026-08-29 — §9.** The known-item
+   evidence against the union was a fusion defect; once fixed, the union is
+   level with the lexical baselines at equal depth and ahead on recall and
+   R-precision at its own. It ships on by default. What remains is to replicate
+   §9's main-set deltas, which are unreplicated and untested.
 4. **Index the `Trial ID` column, or decide not to.** Only 71 of 10,666
    abstracts contain a registry code (§8). Searching by trial id is a
    capability this system does not have, and no amount of tokeniser work
@@ -482,5 +589,6 @@ Remaining, in order:
 **How to quote these numbers.** Give nDCG@10 and R-precision alongside
 Recall@10, never Recall alone. State the depth-10 ceiling (0.626) wherever
 Recall@10 appears. State the result-set size whenever the union (17.8 docs) is
-compared with a depth-10 system. State that 705 of the 1,691 judgements are
+compared with a depth-10 system, and never compare nDCG across depth factors
+without saying so (§9). State that 705 of the 1,691 judgements are
 model-generated.

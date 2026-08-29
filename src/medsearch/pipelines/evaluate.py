@@ -386,11 +386,19 @@ def run_evaluation(
     include_baseline: bool = True,
     pooling: Pooling | None = None,
     include_union: bool = True,
+    report_name: str | None = "evaluation.json",
 ) -> dict[str, Any]:
     """Evaluate every model plus the keyword baseline and write a report.
 
+    Args:
+        report_name: File to write under ``reports/``. Pass ``None`` to skip the
+            write entirely -- callers that score a *slice* of an eval set must
+            do so, or they silently overwrite the main report with numbers that
+            describe a subset. ``scripts/round3_evaluate.py`` did exactly that.
+
     Returns:
-        The report payload, also written to ``reports/evaluation.json``.
+        The report payload, written to ``reports/<report_name>`` unless
+        ``report_name`` is ``None``.
     """
     from medsearch.pipelines.train import load_search_engine
 
@@ -432,10 +440,11 @@ def run_evaluation(
         "results": [r.as_json() for r in results],
     }
 
-    settings.paths.report_dir.mkdir(parents=True, exist_ok=True)
-    destination = settings.paths.report_dir / "evaluation.json"
-    destination.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    logger.info("Wrote %s", destination)
+    if report_name is not None:
+        settings.paths.report_dir.mkdir(parents=True, exist_ok=True)
+        destination = settings.paths.report_dir / report_name
+        destination.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        logger.info("Wrote %s", destination)
 
     return report
 

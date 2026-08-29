@@ -383,19 +383,47 @@ serves.
 
 ### 8.4 What ships: the union, FastText, and the defaults left alone
 
-**The union ships, on by default.** On the re-judged set: Recall@10 **0.702**
-against the 0.70 target, MRR@10 0.890 against 0.45, p95 122 ms against 300 ms.
-It is switchable (`--no-union`, and a sidebar toggle) because it buys that
-recall with ~17.8 results instead of 10 and gives up Precision@1 (0.830 against
-TF-IDF's 0.918) and nDCG@10 (0.746 against 0.797). For a researcher who must
-not miss a relevant trial, recall is the metric that matters; for anyone who
-wants the tightest, best-ranked list, the toggle is there.
+**The union ships, on by default — decision re-made 2026-08-29 and confirmed.**
+On the re-judged set: Recall@10 **0.702** against the 0.70 target, R-precision
+**0.639**, MRR@10 0.923 against the 0.45 target, nDCG@10 0.762, p95 128 ms
+against 300 ms. It is switchable (`--no-union`, and a sidebar toggle) because it
+buys that recall with ~17.8 results instead of 10.
 
-> **This decision is now open again.** It was made when the union scored 0.955
-> against TF-IDF's 0.648 — a margin that turned out to be pool membership. At
-> 0.702 against 0.459, with the ranking metrics pointing the other way, "ship
-> the wider net by default" is a product call that deserves re-making rather
-> than inheriting. See [EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) §7.
+The decision was reopened when re-judging cut the union's margin from 0.955-vs-0.648
+to 0.702-vs-0.459 and the ranking metrics appeared to point the other way. Two
+things settled it.
+
+**First, the strongest argument against the union was a defect, not a property.**
+The known-item damage recorded in EVALUATION_AUDIT §8 Result 4 — the union
+halving MRR@10 to 0.500 where the lexical ranker scored 1.000 — came from an
+exact tie in the fusion: two runs sharing no documents award identical RRF
+scores at identical ranks, and `sorted` settled it by dict insertion order,
+which put the embedding run first. Weighting the keyword run (`KEYWORD_WEIGHT
+= 1.5`) and breaking remaining ties explicitly takes the `code` stratum to
+**MRR@10 1.000 and nDCG@10 1.000**, level with the lexical baselines, and lifts
+every other stratum too. Recall is unchanged throughout, because reordering
+cannot change a set.
+
+**Second, the nDCG comparison was never like-for-like.** The union is scored to
+depth 20, so its nDCG ideal sums ~17 slots against the baselines' 10
+(`evaluate.py`). Truncated to an equal ten-document budget the union scores
+**nDCG@10 0.789** against BM25's 0.799 and TF-IDF's 0.797 — level, not behind.
+
+| method | docs | nDCG@10 | MRR@10 | R@10 | R-prec |
+|---|---|---|---|---|---|
+| BM25 | 10 | **0.799** | 0.909 | 0.471 | 0.458 |
+| TF-IDF | 10 | 0.797 | **0.952** | 0.459 | 0.449 |
+| union-fasttext, truncated to 10 | 10 | 0.789 | 0.923 | 0.459 | 0.451 |
+| **union-fasttext (shipped)** | 17.8 | 0.762 | 0.923 | **0.702** | **0.639** |
+| fasttext alone | 10 | 0.662 | 0.818 | 0.353 | 0.351 |
+
+So the honest statement is the one this section always should have made: **the
+union is not a better ranker, it is a wider net, and it no longer costs ranking
+quality to use.** The remaining trade is one-directional — 17.8 documents for
+Recall@10 0.702 and R-precision 0.639, against 10 documents for 0.471 and
+0.458. For the researcher §2 describes, who must not miss a relevant trial,
+that is the right default; for anyone wanting the tightest list, the toggle is
+there. See [EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) §§7–9.
 
 **FastText is the default model, not Skip-gram.** As standalone rankers the two
 are indistinguishable (p = 0.28 / 0.86 / 1.00, §8.1), which is why the choice

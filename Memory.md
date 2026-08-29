@@ -11,10 +11,10 @@
 | | |
 |---|---|
 | **Version** | `v0.10.0` + Tracks 0, 1, 2 + the domain-audit remediation (unreleased) |
-| **Done** | Sprints 0–7, 9, 10, 11 (bar the tag) · Tracks 0, 1, 2 · Sprint 8 **including two rounds of relevance judging** |
+| **Done** | Sprints 0–7, 9, 10, 11 (bar the tag) · Tracks 0, 1, 2 · Sprint 8 **including three rounds of relevance judging** · the union/lexical product decision |
 | **Not done** | `v1.0.0` tag (**recommend `v0.11.0` instead** — see Phases §11) · an independent clinician review of the judgements · **Sprint 9's image-size DoD (941 MB against < 800 MB)** · an actual Azure deploy · a search driven through the UI in a browser · free-standing negation (needs a query parser, not a token list) · indexing the `Trial ID` column |
-| **Branch** | `fix/domain-audit-remediation`, clean tree, in sync with `origin`. **16 commits ahead of `main`, which still sits at the Sprint 0 scaffolding commit — nothing has been merged back.** Tags run to `v0.9.0`. |
-| **Next action** | **A product decision — open, and round 3 sharpened it.** Re-judging cut the union's margin to **0.702-vs-0.459**, nDCG@10 puts the lexical baselines *ahead* (0.799 vs 0.746), and on known-item code queries the union **halves P@1** (0.500 vs 1.000) because the embedding half contributes a document that cannot be relevant. Decide whether the 17.8-document union still ships by default. See [EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) §§7–8 and PRD §8.4. |
+| **Branch** | `fix/union-fusion-tiebreak`. **Everything through PR #26 is merged to `main`** — the earlier note here that `main` sat at the Sprint 0 scaffolding was stale and is corrected. Tags run to `v0.9.0`. |
+| **Next action** | **The union decision is CLOSED (2026-08-29) — it ships on by default.** The evidence against it was a fusion defect: disjoint runs tied at identical RRF scores and `sorted` broke the tie by dict insertion order, handing rank 1 to the embedding run. Fixed by weighting the keyword run and breaking ties explicitly; `code` stratum MRR@10 0.500 → **1.000**, recall unchanged everywhere. See EVALUATION_AUDIT §9 and PRD §8.4. **Next: the three remaining clean-clone on-ramp defects**, then replicate §9's main-set deltas. |
 | **Note** | Full-corpus training takes 2 min 22 s at ~350 MB peak. Databricks is no longer *required* for it, though still the right home for scheduled retraining. |
 | **Docker** | Installed on the dev machine 2026-08-28. Both image targets build and serve; `deploy/docker/compose.yaml` is the local run. Building it found a defect no test could reach — see the session entry at the end of this file. |
 | **Track 0** | ✅ **COMPLETE** — full-corpus run done 2026-08-27 23:15. Architecture §9 now holds measurements, not estimates. |
@@ -27,9 +27,9 @@ ruff format --check       55 files already formatted
 mypy --strict             no issues in 32 source files
 import-linter             2 contracts kept, 0 broken
 check_function_length     9 over the soft cap, none over the hard cap
-pytest                    525 passed, 36 deselected in 40.5s   (fast loop, unit only)
-pytest -m ""              561 passed in 68.3s                  (full, incl. integration)
-coverage                  87.62%  (gate: 80%)
+pytest                    531 passed, 36 deselected            (fast loop, unit only)
+pytest -m ""              567 passed in 72.2s                  (full, incl. integration)
+coverage                  88%     (gate: 80%)
 pre-commit                not re-run — last verified 14/14 on 2026-08-27
 ```
 
@@ -1461,3 +1461,60 @@ be exercised via `workflow_dispatch` without any tag at all.
 
 **Next action:** unchanged — the union-vs-lexical product decision. Then, if
 the four on-ramp defects are worth fixing, they are a half-hour of work each.
+
+---
+
+## Session — 2026-08-29 (later): the union decision, and the defect under it
+
+**Status: the product decision is closed. The union ships on by default.**
+
+It did not close the way the audit expected. Asked to weigh union-vs-lexical, I
+went to check *why* §8 Result 4 showed the union halving known-item precision,
+and the mechanism turned out to be a bug rather than a property.
+
+**The defect.** `UnionRetriever._rank` fused with unweighted RRF and ordered by
+score alone. When the two runs are disjoint — exactly the known-item case,
+where the lexical run holds the answer and the embedding run holds nothing —
+every document scores `1/(60+rank)`, so both runs' rank-1 documents tie at
+byte-identical `0.016393`. `sorted` is stable, so the tie fell to dict
+insertion order, and the embedding loop runs first. All three `code` queries
+put an irrelevant embedding document at rank 1 and the relevant keyword
+document at rank 2.
+
+**The fix**: weight the keyword run (`KEYWORD_WEIGHT = 1.5`, from a sweep that
+saturates there) and break remaining ties consensus → keyword → embedding.
+Recall is unchanged on every stratum and on the main set — reordering cannot
+change a set — which makes it the control for everything that did move:
+
+| union-fasttext | MRR@10 | nDCG@10 | R-prec |
+|---|---|---|---|
+| main 97-query | 0.890 → 0.923 | 0.746 → 0.762 | 0.616 → 0.639 |
+| `entity` | 0.788 → 0.864 | 0.725 → 0.751 | 0.590 → 0.604 |
+| `code` | 0.500 → **1.000** | 0.649 → **1.000** | 0.722 → **1.000** |
+| `negation` | 0.513 → 0.532 | 0.519 → 0.529 | 0.372 → 0.427 |
+
+**Two measurement errors corrected alongside it.** The union rows' "P@1" is
+actually **P@2** (`depth_factor=2`), which is why an arithmetically impossible
+0.500 appeared over n=3. And nDCG@10 was never comparable across depth
+factors — the union's ideal sums ~17 slots against the baselines' 10. Scored at
+an equal ten-document budget the union reaches **nDCG@10 0.789** against BM25's
+0.799: level, not behind. So "the union is a wider net, not a better ranker"
+survives; "it costs ranking quality" does not.
+
+**A second defect, found by tripping over it.** `scripts/round3_evaluate.py`
+called `run_evaluation` per stratum, and `run_evaluation` unconditionally wrote
+`reports/evaluation.json` — so scoring the strata silently overwrote the main
+report with whichever stratum ran last. It had been leaving `evaluation.json`
+holding the 8-query negation numbers under the label of a 97-query run.
+`run_evaluation` now takes `report_name`, and the script passes `None`.
+
+**Honest limits on this session's numbers.** The fix was measured on the same
+eval set it was diagnosed from. The `code` result needs no inference — exact
+ground truth, 1.000 against 0.500 — but the main-set deltas (+0.016 nDCG,
++0.023 R-precision) are single unreplicated runs, not significance-tested, and
+sit inside the ±0.010–0.014 retraining noise band. The defect is unambiguous
+and the direction is right on all four sets; the main-set magnitude is not
+established. Replicating it is the first item on the eval backlog.
+
+**Gates**: ruff, ruff-format, mypy --strict, import-linter, function-length all
+green; 567 tests pass (was 561), coverage 88%.
