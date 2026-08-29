@@ -231,6 +231,7 @@ restore the previous `models/` + `index/` prefixes from a blob snapshot.
 | 2 | Apply and verify every step here | Needs a subscription |
 | 3 | Replace `REPLACE_ME` placeholders | Needs real resource ids |
 | 4 | ~~Confirm the image builds and serves~~ | **Done 2026-08-28.** Both targets build; both serve under `--memory=2g`. Building it found a `PermissionError` on `data/interim` that no test could reach — see Phases.md Sprint 9. The image was 941 MB against a < 800 MB DoD; trimming the venv on 2026-08-29 brought it to **721 MB** (`standalone` 829 MB) — see Phases.md Sprint 9 |
+| 5 | ~~Release pipeline~~ | **Ran for the first time on 2026-08-29** with the `v1.0.0` tag; both jobs passed. It published a `standalone` image by mistake — `build-push-action` had no `target:`, so buildx took the last Dockerfile stage — whose baked artefact directories held only `.gitkeep`, because CI checks out a repo where the corpus, models and index are all gitignored. Now pinned to `target: runtime`, which is the right image to publish since artefacts arrive by mount. |
 
 ---
 

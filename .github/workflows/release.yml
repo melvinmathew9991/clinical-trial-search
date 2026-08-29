@@ -54,29 +54,75 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha
 
+      # `runtime` explicitly. Without a target, buildx builds the LAST stage in
+      # the Dockerfile, which is `standalone` -- the variant that bakes in the
+      # corpus, models and index. CI checks out a repo where all three are
+      # gitignored, so the v1.0.0 release published a `standalone` image whose
+      # artefact directories held nothing but `.gitkeep`. Functionally that is
+      # the `runtime` image, which is the right thing to publish here since
+      # artefacts arrive by mount or from Azure Storage -- but it was wearing
+      # the wrong label, and nothing failed.
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: deploy/docker/Dockerfile
+          target: runtime
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Verify the image serves under a 2 GB limit
+      # A green healthcheck proves Streamlit's HTTP server is up and nothing
+      # more. Sprint 9 recorded exactly that blind spot: the union retriever
+      # died with PermissionError on its first query while /_stcore/health
+      # stayed green throughout. So this also exercises the preflight and the
+      # query path, and asserts they fail *cleanly* -- this image ships with no
+      # artefacts by design, so the correct behaviour is an actionable domain
+      # error, not a traceback and not a hang.
+      - name: Verify the image serves, and fails cleanly without artefacts
         run: |
           set -euo pipefail
           tag=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
           docker run -d --name medsearch-check --memory=2g -p 8501:8501 "$tag"
+
+          healthy=0
           for _ in $(seq 1 30); do
             if curl -fs http://localhost:8501/_stcore/health >/dev/null; then
-              echo "Healthy."
-              docker rm -f medsearch-check
-              exit 0
+              healthy=1; break
             fi
             sleep 2
           done
-          echo "::error::Image failed to become healthy within 60s"
-          docker logs medsearch-check
-          exit 1
+          if [ "$healthy" -ne 1 ]; then
+            echo "::error::Image failed to become healthy within 60s"
+            docker logs medsearch-check
+            docker rm -f medsearch-check
+            exit 1
+          fi
+          echo "Healthy."
+
+          # The preflight must refuse, and say why.
+          if docker exec medsearch-check medsearch doctor > doctor.txt 2>&1; then
+            echo "::error::doctor exited 0 with no corpus present"
+            cat doctor.txt; docker rm -f medsearch-check; exit 1
+          fi
+          grep -qi "corpus missing" doctor.txt || {
+            echo "::error::doctor failed without naming the missing corpus"
+            cat doctor.txt; docker rm -f medsearch-check; exit 1; }
+          echo "Preflight refuses correctly."
+
+          # The query path must be reachable and error cleanly, not traceback.
+          if docker exec medsearch-check medsearch search "covid pneumonia" > search.txt 2>&1; then
+            echo "::error::search exited 0 with no model present"
+            cat search.txt; docker rm -f medsearch-check; exit 1
+          fi
+          if grep -q "Traceback" search.txt; then
+            echo "::error::search leaked a traceback instead of a domain error"
+            cat search.txt; docker rm -f medsearch-check; exit 1
+          fi
+          grep -qi "No trained" search.txt || {
+            echo "::error::search error did not name the missing model"
+            cat search.txt; docker rm -f medsearch-check; exit 1; }
+          echo "Query path reachable and fails cleanly."
+
+          docker rm -f medsearch-check
