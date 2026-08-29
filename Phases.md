@@ -336,8 +336,17 @@ the JSON and runbook regardless.
 | 11.5 | Reconcile all five docs against the shipped code |
 | 11.6 | Tag `v1.0.0` — *see the note below before doing this* |
 
-**DoD:** clean-clone → `make setup && make doctor && make train && make app` succeeds on the
-dev laptop with no manual steps and no unresponsiveness.
+**DoD (reworded 2026-08-29 — the original was unachievable as written).**
+A clean clone reaches a working app on the dev laptop, with exactly **one**
+manual step — acquiring the corpus — and no unresponsiveness, following either
+the `make` path or the no-`make` fallback in README §Quickstart.
+
+*Why it changed.* The original read "`make setup && make doctor && make train &&
+make app` succeeds ... with no manual steps". Two problems, both found by
+actually running it. `make` is not installed on the dev laptop the DoD names, so
+that command cannot pass there at all; and the 29 MB corpus is gitignored —
+correctly — so a clean clone has no data and *must* have an acquisition step.
+The repo was right on both counts and the DoD was wrong, so the DoD moved.
 **Est:** 1 day.
 
 **Status 2026-08-29.** 11.1 and 11.2 are done — `doctor --full` and

@@ -115,12 +115,12 @@ lengths:  ## Enforce the Rules.md section 3 function-length caps
 	$(BIN)/python scripts/check_function_length.py
 
 .PHONY: test
-test:  ## Run the fast test suite with coverage
+test:  ## Run the fast test suite (unit only, no coverage -- see test-all)
 	$(BIN)/pytest
 
 .PHONY: test-all
 test-all:  ## Full suite including integration, with the 80% coverage gate
-	$(BIN)/pytest -m "" --cov-fail-under=80
+	$(BIN)/pytest -m "" --cov=medsearch --cov-report=term-missing --cov-fail-under=80
 
 .PHONY: check
 check: lint type layers lengths test-all  ## Everything CI runs, locally

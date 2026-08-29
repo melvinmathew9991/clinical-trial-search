@@ -47,6 +47,12 @@ run the line you need, or:
 python -m venv .venv && .venv\Scripts\activate
 pip install -e ".[dev,app]"
 python -m medsearch.runtime --download-nltk
+
+# Acquire the corpus. It is gitignored (29 MB), so a clean clone has none:
+# download the Dimensions COVID-19 dataset linked under "Data" below and
+# save the clinical-trials CSV as data/raw/dimension-covid.csv.
+# `make data` only migrates an existing local Part_1 tree; it downloads nothing.
+
 medsearch doctor
 medsearch train --model all
 medsearch index build --model all

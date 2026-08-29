@@ -20,11 +20,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./
+COPY deploy/requirements.lock ./deploy/requirements.lock
 COPY src ./src
 
+# Installed against the lock as a *constraint*: pyproject decides what is
+# needed, the lock decides which versions, and a genuine conflict fails the
+# build instead of silently resolving to something new. Ranges alone meant
+# every rebuild re-resolved gensim/scipy/pandas and happened to work.
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip \
-    && /opt/venv/bin/pip install ".[app]"
+    && /opt/venv/bin/pip install ".[app]" --constraint deploy/requirements.lock
 
 # Bake NLTK corpora into the image so the container never downloads at
 # startup. Artefacts (models, index) are deliberately NOT baked -- they are

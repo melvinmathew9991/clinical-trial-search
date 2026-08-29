@@ -17,20 +17,29 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
+# Upper bounds are deliberate. Only numpy was capped before, and the clean-clone
+# check on 2026-08-29 resolved gensim 4.4.0 / scipy 1.15.3 / pandas 2.3.3 purely
+# by luck -- gensim has a history of breaking against newer scipy, and nothing
+# here would have stopped a fresh clone picking up an incompatible pair.
+#
+# These ranges bound the blast radius; they are not a reproducibility guarantee.
+# That is `deploy/requirements.lock`, which pins exact versions and is what the
+# image and any deploy install from. Ranges here, exact versions there, is the
+# usual application split -- a library would carry only the ranges.
 dependencies = [
-    "gensim>=4.3.0",
+    "gensim>=4.3.0,<5.0",
     "numpy>=1.24,<2.0",
-    "pandas>=2.1",
-    "nltk>=3.8",
-    "typer>=0.12",
-    "pydantic>=2.5",
-    "pydantic-settings>=2.1",
-    "psutil>=5.9",
-    "scipy>=1.10",
+    "pandas>=2.1,<3.0",
+    "nltk>=3.8,<4.0",
+    "typer>=0.12,<1.0",
+    "pydantic>=2.5,<3.0",
+    "pydantic-settings>=2.1,<3.0",
+    "psutil>=5.9,<8.0",
+    "scipy>=1.10,<2.0",
 ]
 
 [project.optional-dependencies]
-app = ["streamlit>=1.30"]
+app = ["streamlit>=1.30,<2.0"]
 viz = ["scikit-learn>=1.3", "matplotlib>=3.7", "wordcloud>=1.9"]
 azure = ["azure-storage-blob>=12.19", "azure-identity>=1.15"]
 dev = [
@@ -114,11 +123,14 @@ testpaths = ["tests"]
 # The 80% coverage gate is enforced on the FULL suite by `make test-all` and
 # CI, because pipelines/train.py is only meaningfully covered by the
 # integration tests.
+# Coverage is deliberately NOT here. Rules.md section 5 caps the default run at
+# 30 s; measuring coverage cost ~25 s of a 40.5 s run, breaching the rule for no
+# benefit, because the 80% gate is enforced only where `--cov-fail-under` is
+# passed -- `make test-all` and CI. Those enable coverage explicitly. The fast
+# loop is now ~16 s and the gate is unchanged.
 addopts = [
     "-q",
     "--strict-markers",
-    "--cov=medsearch",
-    "--cov-report=term-missing",
     "-m", "not slow",
 ]
 markers = [

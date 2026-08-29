@@ -24,10 +24,30 @@ logger = get_logger(__name__)
 #: override. 200 MB is already well past the 150 MB artefact budget.
 _NGRAM_MATRIX_HARD_LIMIT_BYTES = 200 * 1024**2
 
+#: Corpus size the measured figures in Architecture.md section 9 were taken at.
+_REFERENCE_CORPUS_DOCUMENTS = 10_666
+
 #: Rough multiplier for peak training RSS over the n-gram matrix size.
 #: gensim holds the input matrix, the output layer, and a copy during
 #: normalisation, so budget ~3x plus the word-vector matrix.
 _PEAK_MEMORY_FACTOR = 3.0
+
+#: Everything the n-gram matrix term does *not* model -- the corpus in memory,
+#: the vocabulary, gensim's own overhead -- scaled per 10,000 documents.
+#: Full-corpus FastText training measured a 346 MB peak at 10,666 documents
+#: (Architecture.md section 9); the matrix term accounts for ~60 MB of that at
+#: the default bucket, so ~0.28 GB per 10k documents is the remainder.
+_CORPUS_RSS_GB_PER_10K_DOCS = 0.28
+
+#: Floor on the corpus term, so a tiny run still budgets for interpreter and
+#: numpy overhead rather than predicting ~0.
+_MIN_CORPUS_RSS_GB = 0.05
+
+#: Margin between the predicted requirement and free RAM. Named, because it was
+#: previously a bare `+ 0.5` inside the comparison and so invisible in the error
+#: message -- which then read "peak is ~0.00 GB but only 0.42 GB is available",
+#: a refusal that looks like an arithmetic bug to whoever hits it.
+_SAFETY_HEADROOM_GB = 0.25
 
 
 def _model_fingerprint(kind: ModelKind, params: TrainingParams, corpus_fp: str) -> str:
@@ -54,12 +74,22 @@ def _model_fingerprint(kind: ModelKind, params: TrainingParams, corpus_fp: str) 
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
-def _check_memory_budget(kind: ModelKind, params: TrainingParams) -> None:
+def _check_memory_budget(kind: ModelKind, params: TrainingParams, document_count: int = 0) -> None:
     """Fail before allocating, not during.
+
+    The requirement scales with the job: the n-gram matrix is allocated
+    whatever the corpus size, but everything else grows with the number of
+    documents. A flat margin instead made a 20-document run demand as much free
+    RAM as the full 10,666-document one, which is why the integration suite
+    failed intermittently whenever the machine was under memory pressure.
+
+    Args:
+        document_count: Documents about to be trained on. ``0`` means unknown,
+            and budgets the full-corpus figure -- the safe direction.
 
     Raises:
         ResourceError: If the predicted n-gram matrix exceeds the hard limit,
-            or if free RAM cannot cover the predicted training peak.
+            or if free RAM cannot cover the predicted requirement.
     """
     if kind is not ModelKind.FASTTEXT:
         return
@@ -75,12 +105,18 @@ def _check_memory_budget(kind: ModelKind, params: TrainingParams) -> None:
             f"see ADR-001 in Architecture.md."
         )
 
-    predicted_gb = (matrix_bytes * _PEAK_MEMORY_FACTOR) / 1024**3
+    matrix_gb = (matrix_bytes * _PEAK_MEMORY_FACTOR) / 1024**3
+    documents = document_count or _REFERENCE_CORPUS_DOCUMENTS
+    corpus_gb = max(_MIN_CORPUS_RSS_GB, _CORPUS_RSS_GB_PER_10K_DOCS * documents / 10_000)
+    required_gb = matrix_gb + corpus_gb + _SAFETY_HEADROOM_GB
+
     available = available_memory_gb()
-    if available < predicted_gb + 0.5:
+    if available < required_gb:
         raise ResourceError(
-            f"Predicted FastText training peak is ~{predicted_gb:.2f} GB but only "
-            f"{available:.2f} GB is available.\n"
+            f"FastText training on {documents:,} documents needs about "
+            f"{required_gb:.2f} GB free, but only {available:.2f} GB is available.\n"
+            f"  Budget: {matrix_gb:.2f} GB n-gram matrix + {corpus_gb:.2f} GB corpus "
+            f"and vocabulary + {_SAFETY_HEADROOM_GB:.2f} GB headroom.\n"
             f"  Fix: close other applications, lower MEDSEARCH_FASTTEXT_BUCKET, "
             f"or train on a sample with `--limit 2000`."
         )
@@ -119,7 +155,7 @@ def train_model(
         ResourceError: The run would not fit in available memory.
         ModelError: gensim produced an empty vocabulary.
     """
-    _check_memory_budget(kind, params)
+    _check_memory_budget(kind, params, document_count)
 
     from gensim import __version__ as gensim_version
     from gensim.models import FastText, Word2Vec
