@@ -353,7 +353,7 @@ the JSON and runbook regardless.
 | 11.3 | README: architecture diagram, benchmarks, troubleshooting |
 | 11.4 | ADR review — remove anything superseded |
 | 11.5 | Reconcile all five docs against the shipped code |
-| 11.6 | Tag `v1.0.0` — *see the note below before doing this* |
+| 11.6 | Tag `v1.0.0` — done 2026-08-29; see the note below for what it does and does not assert |
 
 **DoD (reworded 2026-08-29 — the original was unachievable as written).**
 A clean clone reaches a working app on the dev laptop, with exactly **one**
@@ -405,26 +405,36 @@ Also worth knowing on Windows: clone into a **short path**. A deeply nested
 clone blew the 260-character `MAX_PATH` limit while pip was unpacking
 `numpy.libs`, and the install failed with an unhelpful `OSError`.
 
-**Outstanding: 11.6 (`v1.0.0`).**
+**11.6 (`v1.0.0`): done 2026-08-29.**
 
-**On tagging `v1.0.0`: not yet, and this plan is not the authority.** A `1.0.0`
-tag conventionally asserts stability, and the project's own documents currently
-record no Azure deployment,
-no search ever driven through the UI in a browser, an evaluation set 42 % of
-whose judgements are model-generated with no clinician review, and one flaky
-guard test with no root cause. Tagging that `1.0.0` would assert something the
-measurements do not support -- the exact failure
-[EVALUATION_AUDIT.md](./EVALUATION_AUDIT.md) exists to document.
+**On tagging `v1.0.0`: decided by the project owner on 2026-08-29, and tagged.**
 
-This plan was written before anything was measured, and its numbers have been
-wrong repeatedly since: the 800 MB image, the 30-second test budget,
-`Recall@10 0.955`. It does not get to override a measurement now.
+This section previously recommended `v0.11.0` and argued that `1.0.0` should
+wait. Three of the four things it cited have since been closed, and the entry
+is kept rather than deleted so the reasoning stays auditable:
 
-`release.yml` triggers on `v*.*.*` and has never run, but it also carries
-`workflow_dispatch`, so the release pipeline can be exercised without a tag.
-**Recommendation: tag `v0.11.0`** for the audit and container work, consistent
-with the existing v0.x sprint tags, and save `1.0.0` for when a real deployment
-and an independent review of the judgements make it mean something.
+| Cited against `1.0.0` | Status at tag time |
+|---|---|
+| Unmet image-size DoD (941 MB against < 800 MB) | ✅ **met — 721 MB** (Sprint 9 above) |
+| One flaky guard test with no root cause | ✅ **root-caused and fixed** — a flat memory margin, not test order; it was eleven tests, not one |
+| No search driven through the UI in a browser | ❌ **still true.** No browser driver is installed. The app was verified serving and its exact search call driven in-process across all three query types, in both union and no-union modes — which is not the same thing |
+| No Azure deployment | ❌ **still true**, and is the next phase by design |
+| 42 % of judgements model-generated, no clinician review | ❌ **still true**, calibrated at κ = 0.800 but not clinician-reviewed |
+
+**What the tag does and does not assert.** It marks the pre-deployment
+close-out: the union decision made on evidence, the fusion defect fixed, both
+capability gaps closed and measured, the image DoD met, dependencies pinned and
+locked against the target platform. It does **not** assert that the system has
+been deployed, browser-tested, or clinically reviewed — all three remain open
+above and in EVALUATION_AUDIT.md, and none is hidden by the version number.
+
+The original caution stands as a general principle: this plan was written
+before anything was measured, and its numbers have been wrong repeatedly since
+— the 800 MB image, the 30-second test budget, `Recall@10 0.955`. A version
+number is a label, not a measurement, and the measurements are the documents.
+
+`release.yml` triggers on `v*.*.*` and also carries `workflow_dispatch`, so the
+release pipeline can be exercised without pushing a tag.
 
 ---
 
